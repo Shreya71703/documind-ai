@@ -30,25 +30,25 @@ Standard AI chat models can hallucinate or lack access to your specific internal
 flowchart TD
     Client[React/Vite Frontend] -->|API Requests| API[FastAPI Backend]
     API -->|Auth/CRUD| DB[(PostgreSQL)]
-    
+
     subgraph Pipeline [Document Pipeline]
         DocProcessor[Document Processor]
         Embeddings[Embedding Provider]
         VectorStore[(ChromaDB)]
-        
+
         DocProcessor -->|Chunks| Embeddings
         Embeddings -->|Vectors| VectorStore
     end
-    
+
     subgraph Chat [Chat Generation]
         Retriever[Retrieval & Context Assembly]
         LLM[Gemini/OpenAI Chat Provider]
-        
+
         Retriever -->|Query| VectorStore
         VectorStore -->|Relevant Chunks| Retriever
         Retriever -->|Context + Query| LLM
     end
-    
+
     API --> Pipeline
     API --> Chat
 ```
