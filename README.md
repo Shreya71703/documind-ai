@@ -116,8 +116,8 @@ rag-document-assistant/
 
 1. **Clone the repository:**
    ```bash
-   git clone <your-repository-url>
-   cd rag-document-assistant
+   git clone https://github.com/Shreya71703/documind-ai.git
+   cd documind-ai
    ```
 
 2. **Configure Environment:**
