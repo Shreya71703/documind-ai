@@ -189,3 +189,7 @@ npm run build
 - Implement cursor-based pagination for chat sessions.
 - Introduce comprehensive WCAG accessibility audits.
 - Provide Terraform/Pulumi templates for cloud deployment.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
