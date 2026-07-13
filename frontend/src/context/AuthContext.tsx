@@ -47,16 +47,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, password: string) => {
-    const form = new URLSearchParams();
-    form.append('username', email);
-    form.append('password', password);
-
     const data = await apiRequest('/api/v1/auth/login', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: form.toString(),
+      body: JSON.stringify({ email, password }),
     });
 
     localStorage.setItem('documind_token', data.access_token);

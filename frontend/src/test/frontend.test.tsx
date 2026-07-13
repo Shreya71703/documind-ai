@@ -162,7 +162,7 @@ describe('DocuMind AI Frontend Unit Tests', () => {
       });
     });
 
-    it('existing login behavior still uses application/x-www-form-urlencoded', async () => {
+    it('login behavior uses application/json matching backend contract', async () => {
       const { result } = renderHook(() => useAuth(), { wrapper });
 
       const fetchSpy = vi.spyOn(window, 'fetch');
@@ -177,11 +177,72 @@ describe('DocuMind AI Frontend Unit Tests', () => {
       const loginOptions = loginCallArgs[1];
       
       const headers = new Headers(loginOptions?.headers);
-      expect(headers.get('Content-Type')).toBe('application/x-www-form-urlencoded');
+      expect(headers.get('Content-Type')).toBe('application/json');
 
-      const body = loginOptions?.body as string;
-      expect(body).toContain('username=testlogin%40example.com');
-      expect(body).toContain('password=securepass123');
+      const parsedBody = JSON.parse(loginOptions?.body as string);
+      expect(parsedBody).toEqual({
+        email: 'testlogin@example.com',
+        password: 'securepass123'
+      });
+    });
+
+    it('full register-to-auto-login flow uses correct endpoints and contracts', async () => {
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      const fetchSpy = vi.spyOn(window, 'fetch');
+      
+      // 1st request: POST /register
+      fetchSpy.mockResolvedValueOnce({ 
+        ok: true, status: 201, headers: new Headers({'content-type':'application/json'}), 
+        json: async () => ({ id: 'new-user' }) 
+      } as any);
+      
+      // 2nd request: POST /login (auto-login)
+      fetchSpy.mockResolvedValueOnce({ 
+        ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), 
+        json: async () => ({ access_token: 'new-token' }) 
+      } as any);
+      
+      // 3rd request: GET /me (inside fetchMe)
+      fetchSpy.mockResolvedValueOnce({ 
+        ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), 
+        json: async () => ({ id: 'new-user', email: 'flow@example.com' }) 
+      } as any);
+
+      await act(async () => {
+        await result.current.register('flow@example.com', 'flowpass123');
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+      // Verify register request
+      const req1 = fetchSpy.mock.calls[0];
+      expect(req1[0]).toContain('/api/v1/auth/register');
+      expect(new Headers(req1[1]?.headers).get('Content-Type')).toBe('application/json');
+      expect(JSON.parse(req1[1]?.body as string)).toEqual({
+        email: 'flow@example.com',
+        password: 'flowpass123',
+        full_name: 'flow'
+      });
+
+      // Verify auto-login request
+      const req2 = fetchSpy.mock.calls[1];
+      expect(req2[0]).toContain('/api/v1/auth/login');
+      expect(new Headers(req2[1]?.headers).get('Content-Type')).toBe('application/json');
+      expect(JSON.parse(req2[1]?.body as string)).toEqual({
+        email: 'flow@example.com',
+        password: 'flowpass123'
+      });
+
+      // Verify fetchMe request
+      const req3 = fetchSpy.mock.calls[2];
+      expect(req3[0]).toContain('/api/v1/auth/me');
+      expect(new Headers(req3[1]?.headers).get('Authorization')).toBe('Bearer new-token');
+
+      // Verify token storage
+      expect(localStorage.getItem('documind_token')).toBe('new-token');
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.user?.email).toBe('flow@example.com');
     });
   });
 
