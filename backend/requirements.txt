@@ -14,6 +14,7 @@ langchain-openai==0.1.9
 langchain-community==0.2.5
 langchain-google-genai>=1.0.0
 google-generativeai>=0.7.0
+google-genai>=2.11.0
 langgraph==0.0.69
 chromadb==0.5.3
 pypdf==4.2.0

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import React from 'react';
 import { apiRequest, ApiError } from '../lib/api';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 
 describe('DocuMind AI Frontend Unit Tests', () => {
   beforeEach(() => {
@@ -115,6 +118,70 @@ describe('DocuMind AI Frontend Unit Tests', () => {
         expect(err).toBeInstanceOf(ApiError);
         expect(err.requestId).toBe(reqId);
       }
+    });
+  });
+
+  // -------------------------------------------------------------
+  // AUTH CONTEXT TESTS
+  // -------------------------------------------------------------
+  describe('AuthContext Registration and Login', () => {
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <AuthProvider>{children}</AuthProvider>
+    );
+
+    it('register should send application/json with correct UserCreate fields and not leak password in URL', async () => {
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      const fetchSpy = vi.spyOn(window, 'fetch');
+      // Mock for /register, /login, /me
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 201, headers: new Headers({'content-type':'application/json'}), json: async () => ({}) } as any);
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), json: async () => ({ access_token: 'fake' }) } as any);
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), json: async () => ({ id: '123' }) } as any);
+
+      await act(async () => {
+        await result.current.register('testreg@example.com', 'securepass123');
+      });
+
+      // Verify register call
+      expect(fetchSpy).toHaveBeenCalled();
+      const registerCallArgs = fetchSpy.mock.calls[0];
+      const registerUrl = registerCallArgs[0];
+      const registerOptions = registerCallArgs[1];
+
+      // Password is not in the URL or query string
+      expect(registerUrl.toString()).not.toContain('securepass123');
+      
+      const headers = new Headers(registerOptions?.headers);
+      expect(headers.get('Content-Type')).toBe('application/json');
+
+      const parsedBody = JSON.parse(registerOptions?.body as string);
+      expect(parsedBody).toEqual({
+        email: 'testreg@example.com',
+        password: 'securepass123',
+        full_name: 'testreg'
+      });
+    });
+
+    it('existing login behavior still uses application/x-www-form-urlencoded', async () => {
+      const { result } = renderHook(() => useAuth(), { wrapper });
+
+      const fetchSpy = vi.spyOn(window, 'fetch');
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), json: async () => ({ access_token: 'fake' }) } as any);
+      fetchSpy.mockResolvedValueOnce({ ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), json: async () => ({ id: '123' }) } as any);
+
+      await act(async () => {
+        await result.current.login('testlogin@example.com', 'securepass123');
+      });
+
+      const loginCallArgs = fetchSpy.mock.calls[0];
+      const loginOptions = loginCallArgs[1];
+      
+      const headers = new Headers(loginOptions?.headers);
+      expect(headers.get('Content-Type')).toBe('application/x-www-form-urlencoded');
+
+      const body = loginOptions?.body as string;
+      expect(body).toContain('username=testlogin%40example.com');
+      expect(body).toContain('password=securepass123');
     });
   });
 
