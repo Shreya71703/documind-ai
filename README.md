@@ -105,6 +105,10 @@ rag-document-assistant/
 └── docker-compose.yml      # Local product stack
 ```
 
+## Deployment
+
+For a full step-by-step guide to deploying DocuMind AI to the cloud for **free** (using Oracle Cloud's Always Free Tier), see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Local Setup
 
 ### Prerequisites
