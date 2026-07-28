@@ -143,15 +143,9 @@ const MessageContent: React.FC<{ content: string; citations: RetrievedSource[] }
 // Protected Route Guard
 // -------------------------------------------------------------
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading, loginGuest } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      loginGuest().catch(() => {});
-    }
-  }, [isLoading, isAuthenticated, loginGuest]);
-
-  if (isLoading || !isAuthenticated) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 space-y-3">
         <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
@@ -160,7 +154,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  return <>{children}</>;
+  return isAuthenticated ? <>{children}</> : <WorkspacePage />;
 };
 
 // -------------------------------------------------------------

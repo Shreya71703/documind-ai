@@ -187,10 +187,17 @@ describe('DocuMind AI Frontend Unit Tests', () => {
     });
 
     it('full register-to-auto-login flow uses correct endpoints and contracts', async () => {
-      const { result } = renderHook(() => useAuth(), { wrapper });
-
       const fetchSpy = vi.spyOn(window, 'fetch');
-      
+      fetchSpy.mockResolvedValue({ 
+        ok: true, status: 200, headers: new Headers({'content-type':'application/json'}), 
+        json: async () => ({ access_token: 'token', id: 'user', email: 'guest@documind.ai' }) 
+      } as any);
+
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await act(async () => {});
+
+      fetchSpy.mockClear();
+
       // 1st request: POST /register
       fetchSpy.mockResolvedValueOnce({ 
         ok: true, status: 201, headers: new Headers({'content-type':'application/json'}), 

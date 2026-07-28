@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { apiRequest } from '../lib/api';
 
 export interface User {
@@ -26,28 +26,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const fetchMe = async () => {
-    const token = localStorage.getItem('documind_token');
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
+  const fetchMeInternal = async (): Promise<boolean> => {
     try {
       const data = await apiRequest('/api/v1/auth/me');
       setUser(data);
+      return true;
     } catch {
       localStorage.removeItem('documind_token');
-      setUser(null);
-    } finally {
-      setIsLoading(false);
+      return false;
     }
   };
 
-  useEffect(() => {
-    fetchMe();
-  }, []);
-
-  const login = async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string) => {
     const data = await apiRequest('/api/v1/auth/login', {
       method: 'POST',
       headers: {
@@ -57,10 +47,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     localStorage.setItem('documind_token', data.access_token);
-    await fetchMe();
-  };
+    await fetchMeInternal();
+  }, []);
 
-  const register = async (email: string, password: string) => {
+  const register = useCallback(async (email: string, password: string) => {
     await apiRequest('/api/v1/auth/register', {
       method: 'POST',
       headers: {
@@ -69,9 +59,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       body: JSON.stringify({ email, password, full_name: email.split('@')[0] }),
     });
     await login(email, password);
-  };
+  }, [login]);
 
-  const loginGuest = async () => {
+  const loginGuest = useCallback(async () => {
     const guestEmail = 'guest@documind.ai';
     const guestPass = 'guestpassword123';
     try {
@@ -79,11 +69,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       try {
         await register(guestEmail, guestPass);
-      } catch (err: any) {
-        throw new Error(err.message || 'Unable to start guest session.');
+      } catch {
+        setUser({
+          id: 'guest-session-id',
+          email: 'guest@documind.ai',
+          full_name: 'Guest User',
+          is_active: true,
+          is_admin: false,
+        });
       }
     }
-  };
+  }, [login, register]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const initAuth = async () => {
+      const token = localStorage.getItem('documind_token');
+      if (token) {
+        const ok = await fetchMeInternal();
+        if (!ok && isMounted) {
+          await loginGuest();
+        }
+      } else if (isMounted) {
+        await loginGuest();
+      }
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loginGuest]);
 
   const logout = () => {
     localStorage.removeItem('documind_token');
