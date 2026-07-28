@@ -163,7 +163,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const LandingPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const [isStarting, setIsStarting] = useState(false);
 
   const handleEnterWorkspace = () => {
     if (isAuthenticated) {
@@ -189,10 +188,8 @@ const LandingPage: React.FC = () => {
         <div className="flex items-center gap-4">
           <button
             onClick={handleEnterWorkspace}
-            disabled={isStarting}
             className="px-5 py-2.5 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white transition-all shadow-lg shadow-violet-500/10 flex items-center gap-1.5"
           >
-            {isStarting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Open Workspace
           </button>
         </div>
@@ -219,10 +216,9 @@ const LandingPage: React.FC = () => {
         <div className="flex gap-4 items-center">
           <button
             onClick={handleEnterWorkspace}
-            disabled={isStarting}
             className="px-6 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white transition-all shadow-lg shadow-violet-500/20 flex items-center gap-1.5 group"
           >
-            {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            <Sparkles className="w-4 h-4" />
             {isAuthenticated ? 'Open Workspace' : 'Sign In'}
             <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
           </button>
