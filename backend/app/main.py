@@ -104,9 +104,10 @@ async def provider_quota_handler(request: Request, exc: ProviderQuotaError):
 
 @app.exception_handler(ProviderAuthenticationError)
 async def provider_auth_handler(request: Request, exc: ProviderAuthenticationError):
+    detail = str(exc) if exc and str(exc) else "Invalid or missing AI API Key. Please verify your GEMINI_API_KEY in environment variables."
     return JSONResponse(
-        status_code=502,
-        content={"detail": "AI provider authentication failed. Please contact administrator."}
+        status_code=401,
+        content={"detail": detail}
     )
 
 @app.exception_handler(ProviderUnavailableError)
@@ -118,9 +119,10 @@ async def provider_unavailable_handler(request: Request, exc: ProviderUnavailabl
 
 @app.exception_handler(ProviderResponseError)
 async def provider_response_handler(request: Request, exc: ProviderResponseError):
+    detail = str(exc) if exc and str(exc) else "Received an invalid response from the AI provider."
     return JSONResponse(
         status_code=502,
-        content={"detail": "Received an invalid or malformed response from the AI provider."}
+        content={"detail": detail}
     )
 
 @app.get("/", tags=["Health"])

@@ -25,7 +25,6 @@ class LLMGenerationError(LLMError):
 class ProviderError(EmbeddingGenerationError, LLMGenerationError):
     """Base exception for all external AI provider errors."""
     def __init__(self, message: str, original_exception: Exception = None):
-        # Initialize both parent exception classes
         super().__init__(message)
         self.original_exception = original_exception
 
@@ -54,28 +53,34 @@ class ProviderResponseError(ProviderError):
     pass
 
 def normalize_exception(e: Exception) -> Exception:
-    import openai
-    
+    msg = str(e).lower()
+
+    # Check for obvious API key / Auth issues in error string
+    if "api_key" in msg or "api key" in msg or "unauthorized" in msg or "invalid key" in msg or "permissiondenied" in msg:
+        return ProviderAuthenticationError("Invalid or missing AI API Key. Please check your GEMINI_API_KEY.", original_exception=e)
+
     # 1. Check if it's an OpenAI error
-    if isinstance(e, openai.OpenAIError):
-        msg = str(e).lower()
-        if isinstance(e, openai.APITimeoutError):
-            return ProviderTimeoutError("Provider request timed out.", original_exception=e)
-        if isinstance(e, openai.AuthenticationError):
-            return ProviderAuthenticationError("Provider authentication failed.", original_exception=e)
-        if isinstance(e, openai.RateLimitError):
-            if "quota" in msg or "billing" in msg or "credit" in msg or "insufficient_quota" in msg:
-                return ProviderQuotaError("Provider account quota/billing exhausted.", original_exception=e)
-            return ProviderRateLimitError("Provider rate limit exceeded.", original_exception=e)
-        if isinstance(e, (openai.InternalServerError, openai.APIConnectionError)):
-            return ProviderUnavailableError("Provider is temporarily offline or unavailable.", original_exception=e)
-        return ProviderResponseError(f"Unexpected provider response error: {str(e)}", original_exception=e)
+    try:
+        import openai
+        if isinstance(e, openai.OpenAIError):
+            if isinstance(e, openai.APITimeoutError):
+                return ProviderTimeoutError("Provider request timed out.", original_exception=e)
+            if isinstance(e, openai.AuthenticationError):
+                return ProviderAuthenticationError("Invalid or missing OpenAI API key.", original_exception=e)
+            if isinstance(e, openai.RateLimitError):
+                if "quota" in msg or "billing" in msg or "credit" in msg or "insufficient_quota" in msg:
+                    return ProviderQuotaError("Provider account quota/billing exhausted.", original_exception=e)
+                return ProviderRateLimitError("Provider rate limit exceeded.", original_exception=e)
+            if isinstance(e, (openai.InternalServerError, openai.APIConnectionError)):
+                return ProviderUnavailableError("Provider is temporarily offline or unavailable.", original_exception=e)
+            return ProviderResponseError(f"AI Provider Error: {str(e)}", original_exception=e)
+    except ImportError:
+        pass
 
     # 2. Check if it's a Google GenAI error
     try:
         from google.genai.errors import APIError
         if isinstance(e, APIError):
-            msg = str(e).lower()
             code = getattr(e, "code", getattr(e, "status_code", None))
             if code is None:
                 import re
@@ -84,7 +89,7 @@ def normalize_exception(e: Exception) -> Exception:
                     code = int(match.group(1))
             
             if code in (401, 403) or "auth" in msg or "api key" in msg or "invalid" in msg:
-                return ProviderAuthenticationError("Provider authentication failed.", original_exception=e)
+                return ProviderAuthenticationError("Invalid or missing Gemini API key.", original_exception=e)
             if code == 429 or "quota" in msg or "limit" in msg or "rate" in msg:
                 if "quota" in msg or "exhausted" in msg or "insufficient" in msg:
                     return ProviderQuotaError("Provider account quota/billing exhausted.", original_exception=e)
@@ -93,7 +98,7 @@ def normalize_exception(e: Exception) -> Exception:
                 return ProviderTimeoutError("Provider request timed out.", original_exception=e)
             if code in (500, 502, 503) or "unavailable" in msg or "server error" in msg:
                 return ProviderUnavailableError("Provider is temporarily offline or unavailable.", original_exception=e)
-            return ProviderResponseError(f"Unexpected provider response error: {str(e)}", original_exception=e)
+            return ProviderResponseError(f"AI Provider Error: {str(e)}", original_exception=e)
     except ImportError:
         pass
 
@@ -103,5 +108,4 @@ def normalize_exception(e: Exception) -> Exception:
     if isinstance(e, (asyncio.TimeoutError, httpx.TimeoutException)):
         return ProviderTimeoutError("Provider request timed out.", original_exception=e)
 
-    # Return as general response error
-    return ProviderResponseError(f"Unexpected error: {str(e)}", original_exception=e)
+    return ProviderResponseError(f"AI Provider Error: {str(e)}", original_exception=e)
