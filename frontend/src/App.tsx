@@ -154,30 +154,22 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  return isAuthenticated ? <>{children}</> : <WorkspacePage />;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
 };
 
 // -------------------------------------------------------------
 // Landing Page Page
 // -------------------------------------------------------------
 const LandingPage: React.FC = () => {
-  const { isAuthenticated, loginGuest } = useAuth();
+  const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [isStarting, setIsStarting] = useState(false);
 
-  const handleEnterWorkspace = async () => {
+  const handleEnterWorkspace = () => {
     if (isAuthenticated) {
       navigate('/app');
-      return;
-    }
-    setIsStarting(true);
-    try {
-      await loginGuest();
-      navigate('/app');
-    } catch {
+    } else {
       navigate('/login');
-    } finally {
-      setIsStarting(false);
     }
   };
 
@@ -231,7 +223,7 @@ const LandingPage: React.FC = () => {
             className="px-6 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white transition-all shadow-lg shadow-violet-500/20 flex items-center gap-1.5 group"
           >
             {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {isAuthenticated ? 'Open Workspace' : 'Instant Guest Access'}
+            {isAuthenticated ? 'Open Workspace' : 'Sign In'}
             <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
           </button>
         </div>
@@ -269,25 +261,12 @@ const LandingPage: React.FC = () => {
 // Auth Pages (Login / Register)
 // -------------------------------------------------------------
 const LoginPage: React.FC = () => {
-  const { login, loginGuest } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const handleGuestAccess = async () => {
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      await loginGuest();
-      navigate('/app');
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Guest access failed.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -320,19 +299,9 @@ const LoginPage: React.FC = () => {
           <h2 className="text-sm font-bold text-slate-200">Sign In</h2>
         </div>
 
-        <button
-          type="button"
-          onClick={handleGuestAccess}
-          disabled={isLoading}
-          className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10"
-        >
-          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          Instant Guest Access (No Login Required)
-        </button>
-
         <div className="relative flex items-center">
           <div className="flex-grow border-t border-slate-800"></div>
-          <span className="flex-shrink mx-3 text-[10px] text-slate-500 uppercase font-semibold">Or email login</span>
+          <span className="flex-shrink mx-3 text-[10px] text-slate-500 uppercase font-semibold">Sign in with email</span>
           <div className="flex-grow border-t border-slate-800"></div>
         </div>
 
@@ -391,26 +360,13 @@ const LoginPage: React.FC = () => {
 };
 
 const RegisterPage: React.FC = () => {
-  const { register, loginGuest } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const handleGuestAccess = async () => {
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      await loginGuest();
-      navigate('/app');
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Guest access failed.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -447,19 +403,9 @@ const RegisterPage: React.FC = () => {
           <h2 className="text-sm font-bold text-slate-200">Create Account</h2>
         </div>
 
-        <button
-          type="button"
-          onClick={handleGuestAccess}
-          disabled={isLoading}
-          className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10"
-        >
-          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          Instant Guest Access (No Registration Required)
-        </button>
-
         <div className="relative flex items-center">
           <div className="flex-grow border-t border-slate-800"></div>
-          <span className="flex-shrink mx-3 text-[10px] text-slate-500 uppercase font-semibold">Or create account</span>
+          <span className="flex-shrink mx-3 text-[10px] text-slate-500 uppercase font-semibold">Create account with email</span>
           <div className="flex-grow border-t border-slate-800"></div>
         </div>
 
