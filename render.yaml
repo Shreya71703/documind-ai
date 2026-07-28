@@ -34,7 +34,7 @@ services:
         fromService:
           type: web
           name: documind-backend
-          property: url
+          property: host
 
 databases:
   - name: documind-db

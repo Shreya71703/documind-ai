@@ -10,7 +10,11 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:8000';
+let rawBaseUrl = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:8000';
+if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
+  rawBaseUrl = `https://${rawBaseUrl}`;
+}
+const BASE_URL = rawBaseUrl;
 
 export async function apiRequest(
   path: string,
