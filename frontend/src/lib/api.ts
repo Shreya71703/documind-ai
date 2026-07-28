@@ -14,11 +14,16 @@ export class ApiError extends Error {
 let rawBaseUrl = (import.meta as any).env.VITE_API_BASE_URL ||
                  (import.meta as any).env.VITE_API_URL ||
                  (import.meta as any).env.NEXT_PUBLIC_API_URL ||
-                 'http://localhost:8000';
+                 'https://documind-backend-j6el.onrender.com';
 
 // Ensure protocol is present
 if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
   rawBaseUrl = `https://${rawBaseUrl}`;
+}
+
+// Normalize default localhost or un-suffixed backend URLs on production to the live backend
+if (rawBaseUrl.includes('localhost') || (rawBaseUrl.includes('documind-backend') && !rawBaseUrl.includes('documind-backend-j6el'))) {
+  rawBaseUrl = 'https://documind-backend-j6el.onrender.com';
 }
 
 // Strip trailing slashes and normalize /api/v1 prefix
@@ -51,7 +56,7 @@ export async function apiRequest(
       headers,
     });
   } catch (err: any) {
-    // Intercept native browser fetch failures (CORS, cold start, server offline, DNS, network error)
+    // Intercept native browser fetch failures
     const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
     const userMessage = isLocal
       ? `Unable to connect to the local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`

@@ -143,17 +143,24 @@ const MessageContent: React.FC<{ content: string; citations: RetrievedSource[] }
 // Protected Route Guard
 // -------------------------------------------------------------
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, loginGuest } = useAuth();
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      loginGuest().catch(() => {});
+    }
+  }, [isLoading, isAuthenticated, loginGuest]);
+
+  if (isLoading || !isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black text-slate-100">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 space-y-3">
         <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+        <p className="text-xs text-slate-400 font-medium">Opening DocuMind AI Workspace...</p>
       </div>
     );
   }
 
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+  return <>{children}</>;
 };
 
 // -------------------------------------------------------------
@@ -1154,7 +1161,8 @@ const App: React.FC = () => {
       <AuthProvider>
         <Router>
           <Routes>
-            <Route path="/" element={<LandingPage />} />
+            <Route path="/" element={<Navigate to="/app" replace />} />
+            <Route path="/landing" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route
@@ -1173,7 +1181,7 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/app" replace />} />
           </Routes>
         </Router>
       </AuthProvider>
