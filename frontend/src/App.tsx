@@ -160,8 +160,25 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 // Landing Page Page
 // -------------------------------------------------------------
 const LandingPage: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loginGuest } = useAuth();
   const navigate = useNavigate();
+  const [isStarting, setIsStarting] = useState(false);
+
+  const handleEnterWorkspace = async () => {
+    if (isAuthenticated) {
+      navigate('/app');
+      return;
+    }
+    setIsStarting(true);
+    try {
+      await loginGuest();
+      navigate('/app');
+    } catch {
+      navigate('/login');
+    } finally {
+      setIsStarting(false);
+    }
+  };
 
   return (
     <div className="relative min-h-screen flex flex-col justify-between overflow-hidden bg-slate-950 text-slate-100">
@@ -177,26 +194,14 @@ const LandingPage: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
-          {isAuthenticated ? (
-            <button
-              onClick={() => navigate('/app')}
-              className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white transition-all shadow-lg shadow-violet-500/10"
-            >
-              Go to Workspace
-            </button>
-          ) : (
-            <>
-              <Link to="/login" className="text-xs font-semibold text-slate-400 hover:text-white transition-colors">
-                Sign In
-              </Link>
-              <Link
-                to="/register"
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900 border border-slate-800 hover:bg-slate-850 text-white transition-all"
-              >
-                Get Started
-              </Link>
-            </>
-          )}
+          <button
+            onClick={handleEnterWorkspace}
+            disabled={isStarting}
+            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white transition-all shadow-lg shadow-violet-500/10 flex items-center gap-1.5"
+          >
+            {isStarting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Open Workspace
+          </button>
         </div>
       </header>
 
@@ -219,23 +224,15 @@ const LandingPage: React.FC = () => {
         </p>
 
         <div className="flex gap-4 items-center">
-          {isAuthenticated ? (
-            <button
-              onClick={() => navigate('/app')}
-              className="px-6 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white transition-all shadow-lg shadow-violet-500/20 flex items-center gap-1.5 group"
-            >
-              Start Chatting
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          ) : (
-            <button
-              onClick={() => navigate('/register')}
-              className="px-6 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white transition-all shadow-lg shadow-violet-500/20 flex items-center gap-1.5 group"
-            >
-              Get Started Free
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-          )}
+          <button
+            onClick={handleEnterWorkspace}
+            disabled={isStarting}
+            className="px-6 py-3 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white transition-all shadow-lg shadow-violet-500/20 flex items-center gap-1.5 group"
+          >
+            {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {isAuthenticated ? 'Open Workspace' : 'Instant Guest Access'}
+            <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+          </button>
         </div>
 
         {/* Feature Grid */}
@@ -271,12 +268,25 @@ const LandingPage: React.FC = () => {
 // Auth Pages (Login / Register)
 // -------------------------------------------------------------
 const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, loginGuest } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleGuestAccess = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      await loginGuest();
+      navigate('/app');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Guest access failed.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,6 +317,22 @@ const LoginPage: React.FC = () => {
             DocuMind AI
           </Link>
           <h2 className="text-sm font-bold text-slate-200">Sign In</h2>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGuestAccess}
+          disabled={isLoading}
+          className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          Instant Guest Access (No Login Required)
+        </button>
+
+        <div className="relative flex items-center">
+          <div className="flex-grow border-t border-slate-800"></div>
+          <span className="flex-shrink mx-3 text-[10px] text-slate-500 uppercase font-semibold">Or email login</span>
+          <div className="flex-grow border-t border-slate-800"></div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -364,13 +390,26 @@ const LoginPage: React.FC = () => {
 };
 
 const RegisterPage: React.FC = () => {
-  const { register } = useAuth();
+  const { register, loginGuest } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleGuestAccess = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    try {
+      await loginGuest();
+      navigate('/app');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Guest access failed.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,6 +444,22 @@ const RegisterPage: React.FC = () => {
             DocuMind AI
           </Link>
           <h2 className="text-sm font-bold text-slate-200">Create Account</h2>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGuestAccess}
+          disabled={isLoading}
+          className="w-full py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          Instant Guest Access (No Registration Required)
+        </button>
+
+        <div className="relative flex items-center">
+          <div className="flex-grow border-t border-slate-800"></div>
+          <span className="flex-shrink mx-3 text-[10px] text-slate-500 uppercase font-semibold">Or create account</span>
+          <div className="flex-grow border-t border-slate-800"></div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

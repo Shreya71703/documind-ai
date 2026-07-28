@@ -16,6 +16,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
+  loginGuest: () => Promise<void>;
   logout: () => void;
 }
 
@@ -70,6 +71,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await login(email, password);
   };
 
+  const loginGuest = async () => {
+    const guestEmail = 'guest@documind.ai';
+    const guestPass = 'guestpassword123';
+    try {
+      await login(guestEmail, guestPass);
+    } catch {
+      try {
+        await register(guestEmail, guestPass);
+      } catch (err: any) {
+        throw new Error(err.message || 'Unable to start guest session.');
+      }
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('documind_token');
     setUser(null);
@@ -83,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        loginGuest,
         logout,
       }}
     >
