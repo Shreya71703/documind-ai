@@ -2,9 +2,9 @@ services:
   # FastAPI Backend API
   - type: web
     name: documind-backend
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    runtime: python
+    buildCommand: cd backend && pip install --prefer-binary -r requirements.txt
+    startCommand: cd backend && sh start.sh
     healthCheckPath: /health
     plan: free
     envVars:
