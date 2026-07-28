@@ -10,10 +10,25 @@ export class ApiError extends Error {
   }
 }
 
-let rawBaseUrl = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:8000';
+// Support VITE_API_BASE_URL, VITE_API_URL, and NEXT_PUBLIC_API_URL
+let rawBaseUrl = (import.meta as any).env.VITE_API_BASE_URL ||
+                 (import.meta as any).env.VITE_API_URL ||
+                 (import.meta as any).env.NEXT_PUBLIC_API_URL ||
+                 'http://localhost:8000';
+
+// Ensure protocol is present
 if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
   rawBaseUrl = `https://${rawBaseUrl}`;
 }
+
+// Strip trailing slashes and normalize /api/v1 prefix
+rawBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+if (rawBaseUrl.endsWith('/api/v1')) {
+  rawBaseUrl = rawBaseUrl.slice(0, -7);
+} else if (rawBaseUrl.endsWith('/api')) {
+  rawBaseUrl = rawBaseUrl.slice(0, -4);
+}
+
 const BASE_URL = rawBaseUrl;
 
 export async function apiRequest(
@@ -27,10 +42,23 @@ export async function apiRequest(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  const fullUrl = `${BASE_URL}${path}`;
+  let response: Response;
+
+  try {
+    response = await fetch(fullUrl, {
+      ...options,
+      headers,
+    });
+  } catch (err: any) {
+    // Intercept native browser fetch failures (CORS, cold start, server offline, DNS, network error)
+    const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
+    const userMessage = isLocal
+      ? `Unable to connect to the local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
+      : 'Unable to reach the backend API server. The service may be starting up, offline, or experiencing network issues. Please try again shortly.';
+
+    throw new ApiError(userMessage, 0, undefined, { originalError: err?.message, url: fullUrl });
+  }
 
   const requestId = response.headers.get('x-request-id') || undefined;
 
@@ -57,7 +85,11 @@ export async function apiRequest(
     if (data && typeof data.detail === 'string') {
       message = data.detail;
     } else if (data && typeof data.detail === 'object' && data.detail !== null) {
-      message = JSON.stringify(data.detail);
+      if (Array.isArray(data.detail)) {
+        message = data.detail.map((err: any) => err.msg || JSON.stringify(err)).join(', ');
+      } else {
+        message = JSON.stringify(data.detail);
+      }
     }
 
     if (status === 401) {
