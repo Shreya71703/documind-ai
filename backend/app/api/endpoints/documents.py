@@ -329,13 +329,17 @@ async def index_document_endpoint(
         )
 
         
-    except AlreadyIndexedError as exc:
+    except AlreadyIndexedError:
         document.index_status = "indexed"
         await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
+        await db.refresh(document)
+        return DocumentIndexResponse(
+            document_id=document.id,
+            index_status="indexed",
+            chunk_count=document.chunk_count or 1,
+            indexed_at=document.updated_at
         )
+
     except ProviderError as exc:
         document.index_status = "failed"
         await db.commit()
