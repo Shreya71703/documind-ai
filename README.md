@@ -148,7 +148,6 @@ rag-document-assistant/
 - `AI_PROVIDER`: `gemini` or `openai`
 - `GEMINI_API_KEY`: Your Google Gemini API key (if using Gemini)
 - `OPENAI_API_KEY`: Your OpenAI API key (if using OpenAI)
-- `JWT_SECRET`: Secure random string for token generation
 
 *Note: Frontend configuration like `VITE_API_BASE_URL` is embedded during build time and must not contain secrets.*
 

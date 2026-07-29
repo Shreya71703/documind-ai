@@ -270,11 +270,6 @@ async def test_indexed_validation_for_selected_documents(mock_db_session):
 # Endpoint Integration Tests
 # -------------------------------------------------------------
 
-def test_search_unauthorized(mock_db_session):
-    """Verify search endpoint requires authentication."""
-    response = client.post("/api/v1/retrieval/search", json={"query": "hello"})
-    assert response.status_code == 401
-
 def test_search_validation_schema(mock_db_session, mock_auth):
     """Verify request schema validation rules (whitespace query, top_k limits)."""
     # 1. Whitespace query

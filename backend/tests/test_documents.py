@@ -450,12 +450,6 @@ def test_process_document_failure_updates_status(mock_process, mock_db_session, 
     # Assert DB status is FAILED
     assert doc.status == DocumentStatus.FAILED
 
-def test_process_document_unauthorized(mock_db_session):
-    """Test authentication required for processing document."""
-    random_id = uuid.uuid4()
-    response = client.post(f"/api/v1/documents/{random_id}/process")
-    assert response.status_code == 401
-
 def test_process_document_nonexistent_returns_404(mock_db_session, mock_auth):
     """Test processing nonexistent document returns 404."""
     mock_result = MagicMock()
@@ -541,12 +535,6 @@ def test_index_document_success(mock_ingest, mock_embed, mock_process, mock_db_s
         chunks=mock_proc_res.chunks,
         embeddings=[[0.1, 0.2], [0.3, 0.4]]
     )
-
-def test_index_document_unauthorized(mock_db_session):
-    """Test authentication required for indexing."""
-    random_id = uuid.uuid4()
-    response = client.post(f"/api/v1/documents/{random_id}/index")
-    assert response.status_code == 401
 
 def test_index_document_nonexistent_returns_404(mock_db_session, mock_auth):
     """Test indexing nonexistent document returns 404."""

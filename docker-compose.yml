@@ -31,9 +31,6 @@ services:
       - DATABASE_URL=postgresql+asyncpg://rag_user:rag_password@db:5432/rag_db
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
       - AI_PROVIDER=${AI_PROVIDER:-gemini}
-      - JWT_SECRET=${JWT_SECRET:-super-secret-key-change-in-production}
-      - JWT_ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=60
     env_file:
       - backend/.env
     depends_on:

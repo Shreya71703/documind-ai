@@ -18,11 +18,7 @@ class Settings(BaseSettings):
     CHROMA_PERSIST_DIRECTORY: str = "chroma_db"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
 
-    # Security and Auth Configuration
-    JWT_SECRET: str = "super-secret-key-change-in-production-at-least-32-chars-long"
-    JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    
+
     # OpenAI Config
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"

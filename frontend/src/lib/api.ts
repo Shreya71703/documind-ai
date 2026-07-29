@@ -67,12 +67,7 @@ export async function apiRequest(
   path: string,
   options: RequestInit = {}
 ): Promise<any> {
-  const token = localStorage.getItem('documind_token');
   const headers = new Headers(options.headers || {});
-
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
 
   const fullUrl = `${BASE_URL}${path}`;
   let response: Response;
@@ -124,10 +119,7 @@ export async function apiRequest(
       }
     }
 
-    if (status === 401) {
-      localStorage.removeItem('documind_token');
-      message = 'Your session has expired. Please log in again.';
-    } else if (status === 404) {
+    if (status === 404) {
       message = message || 'Requested resource could not be found.';
     } else if (status === 429) {
       message = 'Too many requests. Please wait a moment and try again.';

@@ -253,11 +253,6 @@ def test_delete_session_success(mock_db_session, mock_auth, mock_user):
 # Question / Grounded Message Tests
 # -------------------------------------------------------------
 
-def test_ask_question_unauthorized(mock_db_session):
-    """Verify authentication required to ask messages."""
-    response = client.post(f"/api/v1/chats/{uuid.uuid4()}/messages", json={"question": "What is RAG?"})
-    assert response.status_code == 401
-
 @patch("app.api.endpoints.chats.generate_grounded_answer")
 def test_ask_question_success(mock_rag, mock_db_session, mock_auth, mock_user):
     """Verify question endpoint generates answer, validates citations, and persists conversation pair."""
