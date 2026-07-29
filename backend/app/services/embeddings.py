@@ -23,49 +23,50 @@ from app.services.exceptions import (
 # -------------------------------------------------------------
 
 class _GeminiEmbeddingsClient:
-    """Thin wrapper around GoogleGenerativeAIEmbeddings with fallback support."""
+    """Thin wrapper around GoogleGenerativeAIEmbeddings with resilient multi-model fallback."""
 
     def __init__(self, model: str, api_key: str):
-        try:
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            self._lc_embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/embedding-001",
-                google_api_key=api_key
-            )
-            self._api_key = api_key
-            self._model = model
-        except Exception as e:
-            raise EmbeddingConfigurationError(
-                f"Failed to initialize GoogleGenerativeAIEmbeddings client: {e}"
-            )
+        if not api_key:
+            raise EmbeddingConfigurationError("Gemini API key is missing.")
+        self._api_key = api_key
+        self._model = model
+
+    def _get_candidate_models(self) -> List[str]:
+        candidates = ["models/embedding-001", "models/text-embedding-004", "text-embedding-004", "embedding-001"]
+        if self._model:
+            formatted = self._model if self._model.startswith("models/") else f"models/{self._model}"
+            if formatted not in candidates:
+                candidates.insert(0, formatted)
+        return candidates
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        try:
-            return self._lc_embeddings.embed_documents(texts)
-        except Exception as e:
-            logger.warning(f"Primary embedding model failed: {e}. Trying fallback models...")
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            for alt_model in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004"]:
-                try:
-                    alt_client = GoogleGenerativeAIEmbeddings(model=alt_model, google_api_key=self._api_key)
-                    return alt_client.embed_documents(texts)
-                except Exception:
-                    continue
-            raise e
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        last_exc = None
+        for m in self._get_candidate_models():
+            try:
+                client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
+                return client.embed_documents(texts)
+            except Exception as e:
+                logger.warning(f"Embedding model '{m}' failed: {e}. Trying next candidate...")
+                last_exc = e
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("All embedding model candidates failed.")
 
     def embed_query(self, query: str) -> List[float]:
-        try:
-            return self._lc_embeddings.embed_query(query)
-        except Exception as e:
-            logger.warning(f"Primary query embedding model failed: {e}. Trying fallback models...")
-            from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            for alt_model in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004"]:
-                try:
-                    alt_client = GoogleGenerativeAIEmbeddings(model=alt_model, google_api_key=self._api_key)
-                    return alt_client.embed_query(query)
-                except Exception:
-                    continue
-            raise e
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        last_exc = None
+        for m in self._get_candidate_models():
+            try:
+                client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
+                return client.embed_query(query)
+            except Exception as e:
+                logger.warning(f"Query embedding model '{m}' failed: {e}. Trying next candidate...")
+                last_exc = e
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("All query embedding model candidates failed.")
+
 
 
 
