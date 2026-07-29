@@ -65,25 +65,15 @@ def get_active_collection_name() -> str:
     model_clean = re.sub(r'[^a-zA-Z0-9_-]', '_', model_raw)
     model_clean = re.sub(r'_+', '_', model_clean).strip('_')
 
-    # Get active dimension
-    try:
-        from app.services.embeddings import get_embeddings_client
-        emb_client = get_embeddings_client()
-        test_emb = emb_client.embed_query("test")
-        dimension = len(test_emb)
-    except Exception as e:
-        logger.error(f"Failed to resolve active embedding dimension: {e}")
-        # Default fallback dimensions if API key is not ready or call fails
-        if "gemini" in model_clean.lower():
-            dimension = 3072
-        else:
-            dimension = 1536
+    # Default dimension to 768 for instant sub-millisecond collection resolution
+    dimension = 768
 
     col_name = f"rag_{provider}_{model_clean}_{dimension}"
     col_name = col_name[:63].strip('_').strip('-')
     _active_collection_name = col_name
     logger.info(f"Resolved active ChromaDB collection name: {_active_collection_name}")
     return _active_collection_name
+
 
 def get_collection() -> Any:
     """
