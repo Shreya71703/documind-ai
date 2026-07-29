@@ -29,12 +29,6 @@ class _GeminiEmbeddingsClient:
         self._api_key = api_key
         self._model = model
 
-    def _get_candidate_models(self) -> List[str]:
-        candidates = ["text-embedding-004", "models/text-embedding-004", "embedding-001", "models/embedding-001"]
-        if self._model and self._model not in candidates:
-            candidates.insert(0, self._model)
-        return candidates
-
     def _generate_fallback_vector(self, text: str, dim: int = 768) -> List[float]:
         import hashlib
         import math
@@ -43,7 +37,7 @@ class _GeminiEmbeddingsClient:
             return [1.0 / math.sqrt(dim)] * dim
         
         vec = [0.0] * dim
-        for i, word in enumerate(words):
+        for word in words:
             h_val = int(hashlib.md5(word.encode('utf-8')).hexdigest(), 16)
             idx = h_val % dim
             val = ((h_val >> 8) % 1000) / 500.0 - 1.0
@@ -55,32 +49,32 @@ class _GeminiEmbeddingsClient:
         return [1.0 / math.sqrt(dim)] * dim
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        # 1. Try google.genai client
-        if self._api_key:
+        if self._api_key and self._api_key.strip():
+            # 1. Try langchain_google_genai with candidate models
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            for m in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004", "embedding-001"]:
+                try:
+                    lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
+                    res = lc_client.embed_documents(texts)
+                    if res and len(res) == len(texts):
+                        return res
+                except Exception as e:
+                    logger.warning(f"LangChain Gemini embedding with model '{m}' failed: {e}")
+
+            # 2. Try google.genai client
             try:
                 from google import genai
                 client = genai.Client(api_key=self._api_key)
-                for m in self._get_candidate_models():
+                for m in ["text-embedding-004", "embedding-001"]:
                     try:
                         results = []
                         for t in texts:
-                            res = client.models.embed_content(model=m, contents=t)
-                            results.append(res.embeddings[0].values)
-                        return results
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-
-            # 2. Try langchain_google_genai
-            try:
-                from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                for m in self._get_candidate_models():
-                    try:
-                        lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
-                        return lc_client.embed_documents(texts)
-                    except Exception:
-                        continue
+                            resp = client.models.embed_content(model=m, contents=t)
+                            results.append(resp.embeddings[0].values)
+                        if len(results) == len(texts):
+                            return results
+                    except Exception as e:
+                        logger.warning(f"google.genai embedding with model '{m}' failed: {e}")
             except Exception:
                 pass
 
@@ -88,32 +82,33 @@ class _GeminiEmbeddingsClient:
         return [self._generate_fallback_vector(t) for t in texts]
 
     def embed_query(self, query: str) -> List[float]:
-        if self._api_key:
+        if self._api_key and self._api_key.strip():
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            for m in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004", "embedding-001"]:
+                try:
+                    lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
+                    res = lc_client.embed_query(query)
+                    if res and len(res) > 0:
+                        return res
+                except Exception as e:
+                    logger.warning(f"LangChain Gemini query embedding with model '{m}' failed: {e}")
+
             try:
                 from google import genai
                 client = genai.Client(api_key=self._api_key)
-                for m in self._get_candidate_models():
+                for m in ["text-embedding-004", "embedding-001"]:
                     try:
-                        res = client.models.embed_content(model=m, contents=query)
-                        return res.embeddings[0].values
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-
-            try:
-                from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                for m in self._get_candidate_models():
-                    try:
-                        lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
-                        return lc_client.embed_query(query)
-                    except Exception:
-                        continue
+                        resp = client.models.embed_content(model=m, contents=query)
+                        if resp and resp.embeddings:
+                            return resp.embeddings[0].values
+                    except Exception as e:
+                        logger.warning(f"google.genai query embedding with model '{m}' failed: {e}")
             except Exception:
                 pass
 
         logger.warning("External AI query embedding provider failed or unavailable. Utilizing deterministic fallback vector generator.")
         return self._generate_fallback_vector(query)
+
 
 
 
