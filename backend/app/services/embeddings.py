@@ -50,70 +50,40 @@ class _GeminiEmbeddingsClient:
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         if self._api_key and self._api_key.strip():
-            # 1. Try langchain_google_genai with candidate models
             try:
                 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                for m in ["text-embedding-004", "embedding-001", "models/text-embedding-004", "models/embedding-001"]:
-                    try:
-                        lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
-                        res = lc_client.embed_documents(texts)
-                        if res and len(res) == len(texts):
-                            return res
-                    except Exception as e:
-                        logger.warning(f"LangChain Gemini embedding with model '{m}' failed: {e}")
+                lc_client = GoogleGenerativeAIEmbeddings(
+                    model="models/text-embedding-004",
+                    google_api_key=self._api_key,
+                    timeout=3.0
+                )
+                res = lc_client.embed_documents(texts)
+                if res and len(res) == len(texts):
+                    return res
             except Exception as e:
-                logger.warning(f"LangChain GoogleGenerativeAIEmbeddings init failed: {e}")
+                logger.warning(f"External AI embedding provider failed or timed out: {e}")
 
-            # 2. Try google.genai client
-            try:
-                from google import genai
-                client = genai.Client(api_key=self._api_key)
-                for m in ["text-embedding-004", "embedding-001"]:
-                    try:
-                        results = []
-                        for t in texts:
-                            resp = client.models.embed_content(model=m, contents=t)
-                            results.append(resp.embeddings[0].values)
-                        if len(results) == len(texts):
-                            return results
-                    except Exception as e:
-                        logger.warning(f"google.genai embedding with model '{m}' failed: {e}")
-            except Exception as e:
-                logger.warning(f"google.genai client init failed: {e}")
-
-        logger.warning("External AI embedding provider failed or unavailable. Utilizing deterministic fallback vector generator.")
+        logger.warning("Utilizing deterministic fallback vector generator.")
         return [self._generate_fallback_vector(t) for t in texts]
 
     def embed_query(self, query: str) -> List[float]:
         if self._api_key and self._api_key.strip():
             try:
                 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                for m in ["text-embedding-004", "embedding-001", "models/text-embedding-004", "models/embedding-001"]:
-                    try:
-                        lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
-                        res = lc_client.embed_query(query)
-                        if res and len(res) > 0:
-                            return res
-                    except Exception as e:
-                        logger.warning(f"LangChain Gemini query embedding with model '{m}' failed: {e}")
+                lc_client = GoogleGenerativeAIEmbeddings(
+                    model="models/text-embedding-004",
+                    google_api_key=self._api_key,
+                    timeout=3.0
+                )
+                res = lc_client.embed_query(query)
+                if res and len(res) > 0:
+                    return res
             except Exception as e:
-                logger.warning(f"LangChain GoogleGenerativeAIEmbeddings query init failed: {e}")
+                logger.warning(f"External AI query embedding provider failed or timed out: {e}")
 
-            try:
-                from google import genai
-                client = genai.Client(api_key=self._api_key)
-                for m in ["text-embedding-004", "embedding-001"]:
-                    try:
-                        resp = client.models.embed_content(model=m, contents=query)
-                        if resp and resp.embeddings:
-                            return resp.embeddings[0].values
-                    except Exception as e:
-                        logger.warning(f"google.genai query embedding with model '{m}' failed: {e}")
-            except Exception as e:
-                logger.warning(f"google.genai query client init failed: {e}")
-
-        logger.warning("External AI query embedding provider failed or unavailable. Utilizing deterministic fallback vector generator.")
+        logger.warning("Utilizing deterministic fallback vector generator.")
         return self._generate_fallback_vector(query)
+
 
 
 
