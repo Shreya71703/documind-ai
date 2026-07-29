@@ -48,41 +48,38 @@ class _GeminiEmbeddingsClient:
             return [x / norm for x in vec]
         return [1.0 / math.sqrt(dim)] * dim
 
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        if self._api_key and self._api_key.strip():
-            try:
-                from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                lc_client = GoogleGenerativeAIEmbeddings(
-                    model="models/text-embedding-004",
-                    google_api_key=self._api_key,
-                    timeout=3.0
-                )
-                res = lc_client.embed_documents(texts)
-                if res and len(res) == len(texts):
-                    return res
-            except Exception as e:
-                logger.warning(f"External AI embedding provider failed or timed out: {e}")
+    def _embed_via_rest(self, text: str) -> Optional[List[float]]:
+        if not self._api_key or not self._api_key.strip():
+            return None
+        import urllib.request
+        import json
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={self._api_key}"
+        payload = json.dumps({"content": {"parts": [{"text": text}]}}).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                return data.get("embedding", {}).get("values")
+        except Exception as e:
+            logger.warning(f"REST Gemini embedding failed: {e}")
+            return None
 
-        logger.warning("Utilizing deterministic fallback vector generator.")
-        return [self._generate_fallback_vector(t) for t in texts]
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        results = []
+        for t in texts:
+            vec = self._embed_via_rest(t)
+            if vec:
+                results.append(vec)
+            else:
+                results.append(self._generate_fallback_vector(t))
+        return results
 
     def embed_query(self, query: str) -> List[float]:
-        if self._api_key and self._api_key.strip():
-            try:
-                from langchain_google_genai import GoogleGenerativeAIEmbeddings
-                lc_client = GoogleGenerativeAIEmbeddings(
-                    model="models/text-embedding-004",
-                    google_api_key=self._api_key,
-                    timeout=3.0
-                )
-                res = lc_client.embed_query(query)
-                if res and len(res) > 0:
-                    return res
-            except Exception as e:
-                logger.warning(f"External AI query embedding provider failed or timed out: {e}")
-
-        logger.warning("Utilizing deterministic fallback vector generator.")
+        vec = self._embed_via_rest(query)
+        if vec:
+            return vec
         return self._generate_fallback_vector(query)
+
 
 
 
