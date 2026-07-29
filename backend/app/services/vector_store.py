@@ -26,22 +26,21 @@ class AlreadyIndexedError(VectorStoreError):
 
 _chroma_client = None
 
-def get_chroma_client() -> chromadb.PersistentClient:
+def get_chroma_client() -> chromadb.Client:
     """
-    Lazily initializes and returns a persistent ChromaDB client.
+    Lazily initializes and returns an in-memory ChromaDB client (ephemeral, zero disk I/O locking).
     """
     global _chroma_client
     if _chroma_client is not None:
         return _chroma_client
 
     try:
-        # Create storage directory if needed
-        os.makedirs(settings.CHROMA_PERSIST_DIRECTORY, exist_ok=True)
-        _chroma_client = chromadb.PersistentClient(path=settings.CHROMA_PERSIST_DIRECTORY)
+        _chroma_client = chromadb.Client()
         return _chroma_client
     except Exception as e:
-        logger.error(f"Failed to initialize ChromaDB PersistentClient: {e}")
+        logger.error(f"Failed to initialize ChromaDB Client: {e}")
         raise VectorStoreError(f"ChromaDB client initialization failed: {str(e)}")
+
 
 _active_collection_name = None
 
