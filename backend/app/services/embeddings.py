@@ -29,30 +29,45 @@ class _GeminiEmbeddingsClient:
         try:
             from google import genai
             self._client = genai.Client(api_key=api_key)
-            self._model = model
+            self._model = model if model else "text-embedding-004"
         except Exception as e:
             raise EmbeddingConfigurationError(
                 f"Failed to initialize google.genai client: {e}"
             )
 
+    def _call_embed(self, text: str) -> List[float]:
+        models_to_try = [self._model]
+        if self._model.startswith("models/"):
+            models_to_try.append(self._model.replace("models/", ""))
+        else:
+            models_to_try.append("models/" + self._model)
+        if "text-embedding-004" not in models_to_try:
+            models_to_try.append("text-embedding-004")
+
+        last_exc = None
+        for m in models_to_try:
+            try:
+                response = self._client.models.embed_content(
+                    model=m,
+                    contents=text,
+                )
+                if response and response.embeddings and len(response.embeddings) > 0:
+                    return response.embeddings[0].values
+            except Exception as e:
+                last_exc = e
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Embedding generation failed.")
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        from google.genai import types as genai_types
         results = []
         for text in texts:
-            response = self._client.models.embed_content(
-                model=self._model,
-                contents=text,
-            )
-            results.append(response.embeddings[0].values)
+            vec = self._call_embed(text)
+            results.append(vec)
         return results
 
     def embed_query(self, query: str) -> List[float]:
-        from google.genai import types as genai_types
-        response = self._client.models.embed_content(
-            model=self._model,
-            contents=query,
-        )
-        return response.embeddings[0].values
+        return self._call_embed(query)
 
 
 # -------------------------------------------------------------

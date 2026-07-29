@@ -78,13 +78,21 @@ export async function apiRequest(
       headers,
     });
   } catch (err: any) {
-    // Intercept browser fetch network errors
-    const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
-    const userMessage = isLocal
-      ? `Unable to connect to the local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
-      : 'Unable to reach the backend API server. The service may be starting up, offline, or experiencing network issues. Please try again shortly.';
+    // Retry once after 1.5s in case backend is waking up from sleep on Render free tier
+    try {
+      await new Promise((res) => setTimeout(res, 1500));
+      response = await fetch(fullUrl, {
+        ...options,
+        headers,
+      });
+    } catch (retryErr: any) {
+      const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
+      const userMessage = isLocal
+        ? `Unable to connect to the local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
+        : 'Unable to reach the backend API server. The service may be starting up, offline, or experiencing network issues. Please try again shortly.';
 
-    throw new ApiError(userMessage, 0, undefined, { originalError: err?.message, url: fullUrl });
+      throw new ApiError(userMessage, 0, undefined, { originalError: retryErr?.message, url: fullUrl });
+    }
   }
 
   const requestId = response.headers.get('x-request-id') || undefined;
