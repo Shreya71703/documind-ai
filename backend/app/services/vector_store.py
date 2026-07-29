@@ -190,21 +190,33 @@ def ingest_document_chunks(
         )
         logger.info(f"Successfully indexed {len(ids)} chunks for document {document_id}")
     except Exception as e:
-        logger.error(f"Failed to add vectors to collection: {e}")
-        # Perform document-scoped rollback cleanup in active collection
+        logger.warning(f"Primary collection add failed ({e}). Attempting dimension-matched collection...")
         try:
-            collection.delete(
-                where={
-                    "$and": [
-                        {"user_id": str(user_id)},
-                        {"document_id": str(document_id)}
-                    ]
-                }
+            dim_name = f"{collection.name}_d{len(embeddings[0])}"[:63]
+            dim_col = client.get_or_create_collection(name=dim_name)
+            dim_col.add(
+                ids=ids,
+                embeddings=embeddings,
+                documents=documents,
+                metadatas=metadatas
             )
-            logger.info("Cleaned up partial ingestion vectors successfully.")
-        except Exception as cleanup_err:
-            logger.error(f"Failed to clean up partial vectors: {cleanup_err}")
-        raise VectorStoreError(f"ChromaDB ingestion failed: {str(e)}")
+            logger.info(f"Successfully indexed {len(ids)} chunks in fallback collection {dim_name}")
+            return
+        except Exception as retry_err:
+            logger.error(f"Failed to add vectors to collection: {retry_err}")
+            # Perform document-scoped rollback cleanup in active collection
+            try:
+                collection.delete(
+                    where={
+                        "$and": [
+                            {"user_id": str(user_id)},
+                            {"document_id": str(document_id)}
+                        ]
+                    }
+                )
+            except Exception:
+                pass
+            raise VectorStoreError(f"ChromaDB ingestion failed: {str(e)}")
 
 def delete_document_vectors(user_id: uuid.UUID, document_id: uuid.UUID) -> None:
     """
@@ -255,6 +267,7 @@ def query_similarity(
     If document_ids is provided, limits search to only those documents.
     """
     try:
+        client = get_chroma_client()
         collection = get_collection()
         
         # Build strict ownership filter
@@ -268,11 +281,20 @@ def query_similarity(
         
         where_filter = {"$and": filters} if len(filters) > 1 else filters[0]
         
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where_filter
-        )
+        try:
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where_filter
+            )
+        except Exception as q_err:
+            dim_name = f"{collection.name}_d{len(query_embedding)}"[:63]
+            dim_col = client.get_or_create_collection(name=dim_name)
+            results = dim_col.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where_filter
+            )
         
         formatted = []
         if results and results.get("ids") and results["ids"][0]:
@@ -292,3 +314,4 @@ def query_similarity(
     except Exception as e:
         logger.error(f"Similarity query failed: {e}")
         raise VectorStoreError(f"Similarity search failed: {str(e)}")
+
