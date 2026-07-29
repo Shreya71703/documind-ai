@@ -81,10 +81,11 @@ def get_collection() -> Any:
     client = get_chroma_client()
     collection_name = get_active_collection_name()
     try:
-        return client.get_or_create_collection(name=collection_name)
+        return client.get_or_create_collection(name=collection_name, embedding_function=None)
     except Exception as e:
         logger.error(f"Failed to access ChromaDB collection '{collection_name}': {e}")
         raise VectorStoreError(f"ChromaDB collection access failed: {str(e)}")
+
 
 # -------------------------------------------------------------
 # Helper Functions
