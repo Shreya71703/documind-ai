@@ -308,26 +308,32 @@ async def index_document_endpoint(
     await db.refresh(document)
 
     try:
-        # 4. Extract and chunk using Step 5 document_processor (in worker thread)
-        processing_result = await asyncio.to_thread(
-            process_document,
-            document_id=document.id,
-            file_path=document.storage_path,
-            original_filename=document.original_filename
+        loop = asyncio.get_event_loop()
+        # 4. Extract and chunk using Step 5 document_processor
+        processing_result = await loop.run_in_executor(
+            None,
+            lambda: process_document(
+                document_id=document.id,
+                file_path=document.storage_path,
+                original_filename=document.original_filename
+            )
         )
         
-        # 5. Extract texts and generate embeddings (in worker thread)
+        # 5. Extract texts and generate embeddings
         texts = [chunk.content for chunk in processing_result.chunks]
-        embeddings = await asyncio.to_thread(embed_chunks, texts)
+        embeddings = await loop.run_in_executor(None, lambda: embed_chunks(texts))
         
-        # 6. Ingest into ChromaDB (in worker thread)
-        await asyncio.to_thread(
-            ingest_document_chunks,
-            user_id=current_user.id,
-            document_id=document.id,
-            chunks=processing_result.chunks,
-            embeddings=embeddings
+        # 6. Ingest into ChromaDB
+        await loop.run_in_executor(
+            None,
+            lambda: ingest_document_chunks(
+                user_id=current_user.id,
+                document_id=document.id,
+                chunks=processing_result.chunks,
+                embeddings=embeddings
+            )
         )
+
 
         
     except AlreadyIndexedError:
