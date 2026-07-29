@@ -23,72 +23,51 @@ from app.services.exceptions import (
 # -------------------------------------------------------------
 
 class _GeminiEmbeddingsClient:
-    """Thin wrapper around google.genai to match the embed_documents/embed_query interface."""
+    """Thin wrapper around GoogleGenerativeAIEmbeddings with fallback support."""
 
     def __init__(self, model: str, api_key: str):
         try:
-            from google import genai
-            self._client = genai.Client(api_key=api_key)
-            self._model = model if model else "text-embedding-004"
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            model_name = model if model.startswith("models/") else f"models/{model}"
+            self._lc_embeddings = GoogleGenerativeAIEmbeddings(
+                model=model_name,
+                google_api_key=api_key
+            )
             self._api_key = api_key
+            self._model = model
         except Exception as e:
             raise EmbeddingConfigurationError(
-                f"Failed to initialize google.genai client: {e}"
+                f"Failed to initialize GoogleGenerativeAIEmbeddings client: {e}"
             )
 
-    def _call_embed(self, text: str) -> List[float]:
-        candidates = [
-            self._model,
-            self._model.replace("models/", ""),
-            "text-embedding-004",
-            "models/text-embedding-004",
-            "embedding-001",
-            "models/embedding-001"
-        ]
-        
-        # Deduplicate candidates while preserving order
-        models_to_try = []
-        for m in candidates:
-            if m and m not in models_to_try:
-                models_to_try.append(m)
-
-        last_exc = None
-        for m in models_to_try:
-            try:
-                response = self._client.models.embed_content(
-                    model=m,
-                    contents=text,
-                )
-                if response and response.embeddings and len(response.embeddings) > 0:
-                    return response.embeddings[0].values
-            except Exception as e:
-                last_exc = e
-
-        # Fallback to LangChain GoogleGenerativeAIEmbeddings
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
         try:
+            return self._lc_embeddings.embed_documents(texts)
+        except Exception as e:
+            logger.warning(f"Primary embedding model failed: {e}. Trying fallback models...")
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            for m in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004"]:
+            for alt_model in ["models/text-embedding-004", "models/embedding-001", "text-embedding-004"]:
                 try:
-                    lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
-                    return lc_client.embed_query(text)
+                    alt_client = GoogleGenerativeAIEmbeddings(model=alt_model, google_api_key=self._api_key)
+                    return alt_client.embed_documents(texts)
                 except Exception:
                     continue
-        except Exception:
-            pass
-
-        if last_exc:
-            raise last_exc
-        raise RuntimeError("Embedding generation failed across all model attempts.")
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        results = []
-        for text in texts:
-            vec = self._call_embed(text)
-            results.append(vec)
-        return results
+            raise e
 
     def embed_query(self, query: str) -> List[float]:
-        return self._call_embed(query)
+        try:
+            return self._lc_embeddings.embed_query(query)
+        except Exception as e:
+            logger.warning(f"Primary query embedding model failed: {e}. Trying fallback models...")
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            for alt_model in ["models/text-embedding-004", "models/embedding-001", "text-embedding-004"]:
+                try:
+                    alt_client = GoogleGenerativeAIEmbeddings(model=alt_model, google_api_key=self._api_key)
+                    return alt_client.embed_query(query)
+                except Exception:
+                    continue
+            raise e
+
 
 
 # -------------------------------------------------------------
