@@ -154,7 +154,35 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" />;
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+};
+
+const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 space-y-3">
+        <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+      </div>
+    );
+  }
+
+  return isAuthenticated ? <Navigate to="/app" replace /> : <>{children}</>;
+};
+
+const RootGuard: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 space-y-3">
+        <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+      </div>
+    );
+  }
+
+  return isAuthenticated ? <Navigate to="/app" replace /> : <Navigate to="/login" replace />;
 };
 
 // -------------------------------------------------------------
@@ -1097,10 +1125,24 @@ const App: React.FC = () => {
       <AuthProvider>
         <Router>
           <Routes>
-            <Route path="/" element={<Navigate to="/app" replace />} />
+            <Route path="/" element={<RootGuard />} />
             <Route path="/landing" element={<LandingPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
+            <Route
+              path="/login"
+              element={
+                <PublicOnlyRoute>
+                  <LoginPage />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicOnlyRoute>
+                  <RegisterPage />
+                </PublicOnlyRoute>
+              }
+            />
             <Route
               path="/app"
               element={
@@ -1117,7 +1159,7 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
-            <Route path="*" element={<Navigate to="/app" replace />} />
+            <Route path="*" element={<RootGuard />} />
           </Routes>
         </Router>
       </AuthProvider>

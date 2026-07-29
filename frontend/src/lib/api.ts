@@ -10,31 +10,58 @@ export class ApiError extends Error {
   }
 }
 
-// Support VITE_API_BASE_URL, VITE_API_URL, and NEXT_PUBLIC_API_URL
-let rawBaseUrl = (import.meta as any).env.VITE_API_BASE_URL ||
-                 (import.meta as any).env.VITE_API_URL ||
-                 (import.meta as any).env.NEXT_PUBLIC_API_URL ||
-                 'https://documind-backend-j6el.onrender.com';
+// Live production backend URL on Render
+const LIVE_BACKEND_URL = 'https://documind-backend-j6el.onrender.com';
 
-// Ensure protocol is present
-if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
-  rawBaseUrl = `https://${rawBaseUrl}`;
+function resolveBaseUrl(): string {
+  let rawBaseUrl =
+    (import.meta as any).env.VITE_API_BASE_URL ||
+    (import.meta as any).env.VITE_API_URL ||
+    (import.meta as any).env.NEXT_PUBLIC_API_URL;
+
+  const isProd =
+    (import.meta as any).env.PROD ||
+    (typeof window !== 'undefined' && window.location.protocol === 'https:');
+
+  if (!rawBaseUrl || isProd) {
+    if (
+      !rawBaseUrl ||
+      rawBaseUrl.includes('localhost') ||
+      rawBaseUrl.includes('127.0.0.1') ||
+      (rawBaseUrl.includes('documind-backend') && !rawBaseUrl.includes('documind-backend-j6el'))
+    ) {
+      rawBaseUrl = LIVE_BACKEND_URL;
+    }
+  }
+
+  // Ensure proper http/https protocol
+  if (rawBaseUrl && !rawBaseUrl.startsWith('http://') && !rawBaseUrl.startsWith('https://')) {
+    rawBaseUrl = `https://${rawBaseUrl}`;
+  }
+
+  // Upgrade http:// to https:// on HTTPS pages for non-localhost hosts to prevent mixed content blocks
+  if (
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'https:' &&
+    rawBaseUrl.startsWith('http://') &&
+    !rawBaseUrl.includes('localhost') &&
+    !rawBaseUrl.includes('127.0.0.1')
+  ) {
+    rawBaseUrl = rawBaseUrl.replace(/^http:\/\//, 'https://');
+  }
+
+  // Strip trailing slashes and normalize /api/v1 prefix
+  rawBaseUrl = rawBaseUrl.replace(/\/+$/, '');
+  if (rawBaseUrl.endsWith('/api/v1')) {
+    rawBaseUrl = rawBaseUrl.slice(0, -7);
+  } else if (rawBaseUrl.endsWith('/api')) {
+    rawBaseUrl = rawBaseUrl.slice(0, -4);
+  }
+
+  return rawBaseUrl;
 }
 
-// Normalize default localhost or un-suffixed backend URLs on production to the live backend
-if (rawBaseUrl.includes('localhost') || (rawBaseUrl.includes('documind-backend') && !rawBaseUrl.includes('documind-backend-j6el'))) {
-  rawBaseUrl = 'https://documind-backend-j6el.onrender.com';
-}
-
-// Strip trailing slashes and normalize /api/v1 prefix
-rawBaseUrl = rawBaseUrl.replace(/\/+$/, '');
-if (rawBaseUrl.endsWith('/api/v1')) {
-  rawBaseUrl = rawBaseUrl.slice(0, -7);
-} else if (rawBaseUrl.endsWith('/api')) {
-  rawBaseUrl = rawBaseUrl.slice(0, -4);
-}
-
-const BASE_URL = rawBaseUrl;
+const BASE_URL = resolveBaseUrl();
 
 export async function apiRequest(
   path: string,
@@ -42,7 +69,7 @@ export async function apiRequest(
 ): Promise<any> {
   const token = localStorage.getItem('documind_token');
   const headers = new Headers(options.headers || {});
-  
+
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -56,7 +83,7 @@ export async function apiRequest(
       headers,
     });
   } catch (err: any) {
-    // Intercept native browser fetch failures
+    // Intercept browser fetch network errors
     const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
     const userMessage = isLocal
       ? `Unable to connect to the local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
@@ -86,7 +113,7 @@ export async function apiRequest(
   if (!response.ok) {
     const status = response.status;
     let message = 'An unexpected error occurred. Please try again.';
-    
+
     if (data && typeof data.detail === 'string') {
       message = data.detail;
     } else if (data && typeof data.detail === 'object' && data.detail !== null) {
@@ -109,7 +136,7 @@ export async function apiRequest(
     } else if (status === 504) {
       message = 'The AI response took too long. Please try again.';
     } else if (status >= 500) {
-      message = message || 'A server error occurred. Please try again later.';
+      message = message || 'Server error. Please try again later.';
     }
 
     throw new ApiError(message, status, requestId, data?.detail);
