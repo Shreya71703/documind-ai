@@ -28,9 +28,8 @@ class _GeminiEmbeddingsClient:
     def __init__(self, model: str, api_key: str):
         try:
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            model_name = model if model.startswith("models/") else f"models/{model}"
             self._lc_embeddings = GoogleGenerativeAIEmbeddings(
-                model=model_name,
+                model="models/embedding-001",
                 google_api_key=api_key
             )
             self._api_key = api_key
@@ -46,7 +45,7 @@ class _GeminiEmbeddingsClient:
         except Exception as e:
             logger.warning(f"Primary embedding model failed: {e}. Trying fallback models...")
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            for alt_model in ["models/text-embedding-004", "models/embedding-001", "text-embedding-004"]:
+            for alt_model in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004"]:
                 try:
                     alt_client = GoogleGenerativeAIEmbeddings(model=alt_model, google_api_key=self._api_key)
                     return alt_client.embed_documents(texts)
@@ -60,13 +59,14 @@ class _GeminiEmbeddingsClient:
         except Exception as e:
             logger.warning(f"Primary query embedding model failed: {e}. Trying fallback models...")
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
-            for alt_model in ["models/text-embedding-004", "models/embedding-001", "text-embedding-004"]:
+            for alt_model in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004"]:
                 try:
                     alt_client = GoogleGenerativeAIEmbeddings(model=alt_model, google_api_key=self._api_key)
                     return alt_client.embed_query(query)
                 except Exception:
                     continue
             raise e
+
 
 
 
