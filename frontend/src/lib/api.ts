@@ -88,8 +88,8 @@ export async function apiRequest(
     } catch (retryErr: any) {
       const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
       const userMessage = isLocal
-        ? `Unable to connect to the local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
-        : 'Unable to reach the backend API server. The service may be starting up, offline, or experiencing network issues. Please try again shortly.';
+        ? `Unable to connect to local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
+        : `Network Error: Unable to reach backend API server at ${fullUrl}. Details: ${retryErr?.message || 'Failed to fetch'}. Please verify backend status and CORS configuration.`;
 
       throw new ApiError(userMessage, 0, undefined, { originalError: retryErr?.message, url: fullUrl });
     }

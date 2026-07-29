@@ -30,19 +30,27 @@ class _GeminiEmbeddingsClient:
             from google import genai
             self._client = genai.Client(api_key=api_key)
             self._model = model if model else "text-embedding-004"
+            self._api_key = api_key
         except Exception as e:
             raise EmbeddingConfigurationError(
                 f"Failed to initialize google.genai client: {e}"
             )
 
     def _call_embed(self, text: str) -> List[float]:
-        models_to_try = [self._model]
-        if self._model.startswith("models/"):
-            models_to_try.append(self._model.replace("models/", ""))
-        else:
-            models_to_try.append("models/" + self._model)
-        if "text-embedding-004" not in models_to_try:
-            models_to_try.append("text-embedding-004")
+        candidates = [
+            self._model,
+            self._model.replace("models/", ""),
+            "text-embedding-004",
+            "models/text-embedding-004",
+            "embedding-001",
+            "models/embedding-001"
+        ]
+        
+        # Deduplicate candidates while preserving order
+        models_to_try = []
+        for m in candidates:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
 
         last_exc = None
         for m in models_to_try:
@@ -55,9 +63,22 @@ class _GeminiEmbeddingsClient:
                     return response.embeddings[0].values
             except Exception as e:
                 last_exc = e
+
+        # Fallback to LangChain GoogleGenerativeAIEmbeddings
+        try:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            for m in ["models/embedding-001", "models/text-embedding-004", "text-embedding-004"]:
+                try:
+                    lc_client = GoogleGenerativeAIEmbeddings(model=m, google_api_key=self._api_key)
+                    return lc_client.embed_query(text)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
         if last_exc:
             raise last_exc
-        raise RuntimeError("Embedding generation failed.")
+        raise RuntimeError("Embedding generation failed across all model attempts.")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         results = []
