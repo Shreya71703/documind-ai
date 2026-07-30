@@ -1,4 +1,6 @@
 import logging
+import json
+import urllib.request
 from typing import List
 
 try:
@@ -51,8 +53,6 @@ class _GeminiEmbeddingsClient:
     def _embed_via_rest(self, text: str) -> Optional[List[float]]:
         if not self._api_key or not self._api_key.strip():
             return None
-        import urllib.request
-        import json
         url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={self._api_key}"
         payload = json.dumps({"content": {"parts": [{"text": text}]}}).encode('utf-8')
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})

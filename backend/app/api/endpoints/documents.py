@@ -317,7 +317,8 @@ async def index_document_endpoint(
         user_id = current_user.id
         
         # 4. Extract and chunk using Step 5 document_processor
-        processing_result = await asyncio.to_thread(
+        from starlette.concurrency import run_in_threadpool
+        processing_result = await run_in_threadpool(
             process_document,
             document_id=doc_id,
             file_path=doc_path,
@@ -326,10 +327,10 @@ async def index_document_endpoint(
         
         # 5. Extract texts and generate embeddings
         texts = [chunk.content for chunk in processing_result.chunks]
-        embeddings = await asyncio.to_thread(embed_chunks, texts)
+        embeddings = await run_in_threadpool(embed_chunks, texts)
         
         # 6. Ingest into ChromaDB / In-memory store
-        await asyncio.to_thread(
+        await run_in_threadpool(
             ingest_document_chunks,
             user_id=user_id,
             document_id=doc_id,
