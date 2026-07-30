@@ -363,24 +363,22 @@ async def index_document_endpoint(
         )
     except DocumentProcessingError as exc:
         document.index_status = "failed"
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc)
-        )
-    except VectorStoreError as exc:
-        document.index_status = "failed"
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc)
-        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except Exception as e:
+        import traceback
+        error_tb = traceback.format_exc()
         document.index_status = "failed"
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal error during document indexing: {str(e)}"
+            detail=f"Internal error during document indexing: {str(e)}\n{error_tb}"
+        )
+    except BaseException as e:
+        import traceback
+        error_tb = traceback.format_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"BaseException during document indexing: {str(e)}\n{error_tb}"
         )
 
     # 7. Success transition
