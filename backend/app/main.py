@@ -136,7 +136,14 @@ def read_root(request: Request):
     }
 
 @app.get("/health", tags=["Health"])
-def health_check():
+def health_check(test_embed: bool = False):
+    if test_embed:
+        from app.services.embeddings import embed_chunks
+        try:
+            res = embed_chunks(["Hello world"])
+            return {"status": "healthy", "test_embed": "success", "length": len(res)}
+        except Exception as e:
+            return {"status": "healthy", "test_embed": "error", "error": str(e)}
     return {
         "status": "healthy",
         "timestamp": time.time()
