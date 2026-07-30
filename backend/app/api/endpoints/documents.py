@@ -316,32 +316,25 @@ async def index_document_endpoint(
         doc_filename = document.original_filename
         
         # 4. Extract and chunk using Step 5 document_processor
-        processing_result = await loop.run_in_executor(
-            None,
-            lambda: process_document(
-                document_id=doc_id,
-                file_path=doc_path,
-                original_filename=doc_filename
-            )
+        processing_result = process_document(
+            document_id=doc_id,
+            file_path=doc_path,
+            original_filename=doc_filename
         )
-
         
         # 5. Extract texts and generate embeddings
         texts = [chunk.content for chunk in processing_result.chunks]
-        embeddings = await loop.run_in_executor(None, lambda: embed_chunks(texts))
+        embeddings = embed_chunks(texts)
         
-        # Capture user_id to avoid cross-thread ORM access
+        # Capture user_id to avoid cross-thread ORM access (even though we are synchronous now)
         user_id = current_user.id
         
         # 6. Ingest into ChromaDB
-        await loop.run_in_executor(
-            None,
-            lambda: ingest_document_chunks(
-                user_id=user_id,
-                document_id=doc_id,
-                chunks=processing_result.chunks,
-                embeddings=embeddings
-            )
+        ingest_document_chunks(
+            user_id=user_id,
+            document_id=doc_id,
+            chunks=processing_result.chunks,
+            embeddings=embeddings
         )
 
 
