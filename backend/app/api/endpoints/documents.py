@@ -310,13 +310,15 @@ async def index_document_endpoint(
     try:
         loop = asyncio.get_event_loop()
         
-        # Capture properties in main thread to avoid greenlet/asyncpg cross-thread crashes
+        # Capture properties in main thread to avoid cross-thread SQLAlchemy crashes
         doc_id = document.id
         doc_path = document.storage_path
         doc_filename = document.original_filename
+        user_id = current_user.id
         
         # 4. Extract and chunk using Step 5 document_processor
-        processing_result = process_document(
+        processing_result = await asyncio.to_thread(
+            process_document,
             document_id=doc_id,
             file_path=doc_path,
             original_filename=doc_filename
@@ -324,13 +326,11 @@ async def index_document_endpoint(
         
         # 5. Extract texts and generate embeddings
         texts = [chunk.content for chunk in processing_result.chunks]
-        embeddings = embed_chunks(texts)
+        embeddings = await asyncio.to_thread(embed_chunks, texts)
         
-        # Capture user_id to avoid cross-thread ORM access (even though we are synchronous now)
-        user_id = current_user.id
-        
-        # 6. Ingest into ChromaDB
-        ingest_document_chunks(
+        # 6. Ingest into ChromaDB / In-memory store
+        await asyncio.to_thread(
+            ingest_document_chunks,
             user_id=user_id,
             document_id=doc_id,
             chunks=processing_result.chunks,
