@@ -315,9 +315,11 @@ async def index_document_endpoint(
             lambda: process_document(
                 document_id=document.id,
                 file_path=document.storage_path,
-                original_filename=document.original_filename
+                original_filename=document.original_filename,
+                fallback_text=document.extracted_text
             )
         )
+
         
         # 5. Extract texts and generate embeddings
         texts = [chunk.content for chunk in processing_result.chunks]

@@ -159,23 +159,30 @@ def extract_text_file(file_path: str) -> str:
 def process_document(
     document_id: uuid.UUID,
     file_path: str,
-    original_filename: str
+    original_filename: str,
+    fallback_text: Optional[str] = None
 ) -> DocumentProcessingResult:
     """
-    Processes a document: validates existences, extracts text, normalizes it,
-    splits it into chunks, and returns a structured processing result.
+    Processes a document: validates existence or fallback text, extracts text,
+    normalizes it, splits it into chunks, and returns a structured processing result.
     """
-    # 1. Verify file exists
-    if not os.path.exists(file_path):
-        raise StoredFileMissingError(f"File not found at storage path: {file_path}")
-
-    # 2. Extract text based on file extension
     _, ext = os.path.splitext(original_filename.lower())
-    
     extracted_chunks_raw: List[Dict[str, Any]] = []
-    
-    # We maintain a single text variable for simple length reporting
     total_raw_text = ""
+
+    # 1. Verify file exists or use fallback text if ephemeral disk was reset
+    if not os.path.exists(file_path):
+        if fallback_text and fallback_text.strip():
+            logger.warning(f"Physical file missing at {file_path}. Utilizing fallback_text from database.")
+            total_raw_text = fallback_text
+            extracted_chunks_raw.append({
+                "text": normalize_text(fallback_text),
+                "metadata": {"source_filename": original_filename, "file_type": ext.lstrip(".")}
+            })
+        else:
+            raise StoredFileMissingError(f"File not found at storage path: {file_path}")
+    else:
+
 
     if ext == ".pdf":
         pages = extract_pdf_pages(file_path)
