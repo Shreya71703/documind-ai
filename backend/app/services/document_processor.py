@@ -182,52 +182,50 @@ def process_document(
         else:
             raise StoredFileMissingError(f"File not found at storage path: {file_path}")
     else:
+        if ext == ".pdf":
+            pages = extract_pdf_pages(file_path)
+            # Check if we got any text at all
+            has_any_text = any(p["text"].strip() for p in pages)
+            if not has_any_text:
+                raise EmptyExtractedContentError("PDF contains no extractable text.")
+            
+            # Keep pages separate to preserve page number metadata
+            for p in pages:
+                normalized_page = normalize_text(p["text"])
+                if normalized_page:
+                    extracted_chunks_raw.append({
+                        "text": normalized_page,
+                        "metadata": p["metadata"]
+                    })
+                    total_raw_text += p["text"]
 
+        elif ext == ".docx":
+            paragraphs = extract_docx_paragraphs(file_path)
+            joined_text = "\n\n".join(paragraphs)
+            normalized_text = normalize_text(joined_text)
+            if not normalized_text:
+                raise EmptyExtractedContentError("DOCX contains no extractable text.")
+            
+            extracted_chunks_raw.append({
+                "text": normalized_text,
+                "metadata": {}
+            })
+            total_raw_text = joined_text
 
-    if ext == ".pdf":
-        pages = extract_pdf_pages(file_path)
-        # Check if we got any text at all
-        has_any_text = any(p["text"].strip() for p in pages)
-        if not has_any_text:
-            raise EmptyExtractedContentError("PDF contains no extractable text.")
-        
-        # Keep pages separate to preserve page number metadata
-        for p in pages:
-            normalized_page = normalize_text(p["text"])
-            if normalized_page:
-                extracted_chunks_raw.append({
-                    "text": normalized_page,
-                    "metadata": p["metadata"]
-                })
-                total_raw_text += p["text"]
+        elif ext in [".txt", ".md"]:
+            raw_text = extract_text_file(file_path)
+            normalized_text = normalize_text(raw_text)
+            if not normalized_text:
+                raise EmptyExtractedContentError("Text file contains no extractable text.")
+            
+            extracted_chunks_raw.append({
+                "text": normalized_text,
+                "metadata": {}
+            })
+            total_raw_text = raw_text
 
-    elif ext == ".docx":
-        paragraphs = extract_docx_paragraphs(file_path)
-        joined_text = "\n\n".join(paragraphs)
-        normalized_text = normalize_text(joined_text)
-        if not normalized_text:
-            raise EmptyExtractedContentError("DOCX contains no extractable text.")
-        
-        extracted_chunks_raw.append({
-            "text": normalized_text,
-            "metadata": {}
-        })
-        total_raw_text = joined_text
-
-    elif ext in [".txt", ".md"]:
-        raw_text = extract_text_file(file_path)
-        normalized_text = normalize_text(raw_text)
-        if not normalized_text:
-            raise EmptyExtractedContentError("Text file contains no extractable text.")
-        
-        extracted_chunks_raw.append({
-            "text": normalized_text,
-            "metadata": {}
-        })
-        total_raw_text = raw_text
-
-    else:
-        raise UnsupportedFileTypeError(f"Unsupported file type extension: {ext}")
+        else:
+            raise UnsupportedFileTypeError(f"Unsupported file type extension: {ext}")
 
     # 3. Perform chunking using RecursiveCharacterTextSplitter
     try:
