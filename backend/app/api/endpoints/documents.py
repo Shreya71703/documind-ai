@@ -309,14 +309,19 @@ async def index_document_endpoint(
 
     try:
         loop = asyncio.get_event_loop()
+        
+        # Capture properties in main thread to avoid greenlet/asyncpg cross-thread crashes
+        doc_id = document.id
+        doc_path = document.storage_path
+        doc_filename = document.original_filename
+        
         # 4. Extract and chunk using Step 5 document_processor
         processing_result = await loop.run_in_executor(
             None,
             lambda: process_document(
-                document_id=document.id,
-                file_path=document.storage_path,
-                original_filename=document.original_filename,
-                fallback_text=document.extracted_text
+                document_id=doc_id,
+                file_path=doc_path,
+                original_filename=doc_filename
             )
         )
 
@@ -325,12 +330,15 @@ async def index_document_endpoint(
         texts = [chunk.content for chunk in processing_result.chunks]
         embeddings = await loop.run_in_executor(None, lambda: embed_chunks(texts))
         
+        # Capture user_id to avoid cross-thread ORM access
+        user_id = current_user.id
+        
         # 6. Ingest into ChromaDB
         await loop.run_in_executor(
             None,
             lambda: ingest_document_chunks(
-                user_id=current_user.id,
-                document_id=document.id,
+                user_id=user_id,
+                document_id=doc_id,
                 chunks=processing_result.chunks,
                 embeddings=embeddings
             )
