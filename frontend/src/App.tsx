@@ -331,8 +331,24 @@ const WorkspacePage: React.FC = () => {
   const fetchDocs = async () => {
     try {
       setIsLoadingDocs(true);
+      // Reset documents stuck in "indexing" state from previous crashed server instances
+      try {
+        await apiRequest('/api/v1/documents/reset-stuck', { method: 'POST' });
+      } catch {
+        // Non-critical — if it fails, proceed anyway
+      }
       const data = await apiRequest('/api/v1/documents');
       setDocuments(data);
+      // Auto-retry indexing for any documents in not_indexed or failed state
+      for (const doc of data) {
+        if (doc.status === 'ready' && (doc.index_status === 'not_indexed' || doc.index_status === 'failed')) {
+          try {
+            await apiRequest(`/api/v1/documents/${doc.id}/index`, { method: 'POST' });
+          } catch {
+            // Ignore per-doc errors — DocumentList handles retries
+          }
+        }
+      }
     } catch (err: any) {
       console.error('Failed to load documents: ', err.message);
     } finally {

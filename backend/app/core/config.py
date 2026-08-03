@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     
     # Gemini Config
     GEMINI_API_KEY: str = ""
-    GEMINI_CHAT_MODEL: str = "gemini-1.5-flash"
+    GEMINI_CHAT_MODEL: str = "gemini-2.0-flash"
     GEMINI_EMBEDDING_MODEL: str = "models/embedding-001"
     
     # Storage Configuration

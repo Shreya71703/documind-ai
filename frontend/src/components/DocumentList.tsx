@@ -80,6 +80,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({ documents, onRefresh
         const isIndexing = doc.index_status === 'indexing';
         const isProcessing = doc.status === 'processing';
         const isReady = doc.status === 'ready' && doc.index_status === 'indexed';
+        const canRetry = isFailed || (isIndexing && !isReady);  // allow retry on stuck indexing too
 
         return (
           <div
@@ -122,12 +123,13 @@ export const DocumentList: React.FC<DocumentListProps> = ({ documents, onRefresh
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {isFailed && (
+              {canRetry && (
                 <button
                   disabled={retryingId === doc.id}
                   onClick={() => handleRetryPipeline(doc.id, doc.status, doc.index_status)}
                   className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors duration-150"
-                  aria-label="Retry failed pipeline stage"
+                  aria-label="Retry pipeline"
+                  title={isIndexing ? 'Stuck? Click to retry indexing' : 'Retry failed stage'}
                 >
                   {retryingId === doc.id ? (
                     <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />

@@ -32,6 +32,26 @@ from app.core.config import settings
 
 router = APIRouter()
 
+@router.post("/reset-stuck", status_code=200)
+async def reset_stuck_documents(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reset all documents that are stuck in 'indexing' state back to 'not_indexed'.
+    This happens when a previous index attempt crashed (502, SIGILL, etc.) and never
+    cleaned up the state. Call this on app load to allow re-indexing.
+    """
+    from sqlalchemy import update
+    stmt = (
+        update(Document)
+        .where(Document.user_id == current_user.id, Document.index_status == "indexing")
+        .values(index_status="not_indexed")
+    )
+    result = await db.execute(stmt)
+    await db.commit()
+    return {"reset_count": result.rowcount}
+
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
@@ -295,12 +315,13 @@ async def index_document_endpoint(
             detail="Document not found"
         )
 
-    # 2. Reject unsupported states
+    # 2. Reset stuck "indexing" status from previous crashed attempts so the document can be re-indexed
     if document.index_status == "indexing":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Document is currently being indexed."
-        )
+        # A document stuck in "indexing" means a previous attempt crashed (e.g., 502).
+        # Reset to "not_indexed" so this request can proceed.
+        document.index_status = "not_indexed"
+        await db.commit()
+        await db.refresh(document)
 
     # 3. Transition status to indexing in DB
     document.index_status = "indexing"
