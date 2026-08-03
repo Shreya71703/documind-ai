@@ -148,7 +148,7 @@ export async function apiRequest(
     } else if (status === 429) {
       message = 'Too many requests. Please wait a moment and try again.';
     } else if (status === 503) {
-      message = 'The AI service or database is temporarily unavailable. Please try again shortly.';
+      message = (data && typeof data.detail === 'string' && data.detail.trim()) ? data.detail : 'The AI service or database is temporarily unavailable. Please try again shortly.';
     } else if (status === 504) {
       message = 'The AI response took too long. Please try again.';
     } else if (status >= 500) {
