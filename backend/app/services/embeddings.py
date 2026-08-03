@@ -66,7 +66,8 @@ class _GeminiEmbeddingsClient:
         if not self._api_key or not self._api_key.strip():
             return None
         import time
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={self._api_key}"
+        model_name = self._model if self._model.startswith("models/") else f"models/{self._model}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{model_name}:embedContent?key={self._api_key}"
         payload = json.dumps({"content": {"parts": [{"text": text}]}}).encode('utf-8')
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
         
