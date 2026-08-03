@@ -90,6 +90,37 @@ def get_chat_client():
 # Response Generation
 # -------------------------------------------------------------
 
+def _invoke_gemini_rest(messages: List[Any]) -> str:
+    import urllib.request, json
+    if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.strip():
+        raise LLMConfigurationError("Gemini API key is missing.")
+    
+    prompt_parts = []
+    for msg in messages:
+        content = getattr(msg, "content", str(msg))
+        prompt_parts.append(str(content))
+    prompt_str = "\n\n".join(prompt_parts)
+
+    model_name = settings.GEMINI_CHAT_MODEL
+    clean_model = model_name if model_name.startswith("models/") else f"models/{model_name}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/{clean_model}:generateContent?key={settings.GEMINI_API_KEY}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt_str}]}]
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=int(settings.PROVIDER_TIMEOUT_CHAT)) as resp:
+        res_json = json.loads(resp.read().decode("utf-8"))
+        candidates = res_json.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                txt = parts[0].get("text", "")
+                if txt and txt.strip():
+                    return txt.strip()
+    raise LLMGenerationError("Gemini REST API returned empty content.")
+
 def generate_chat_response(messages: List[Any]) -> str:
     """
     Invokes the Chat client with messages and returns the text response.
@@ -100,16 +131,19 @@ def generate_chat_response(messages: List[Any]) -> str:
 
     def _invoke_provider(prov: str) -> str:
         if prov == "gemini":
-            if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.strip():
-                raise LLMConfigurationError("Gemini API key is missing.")
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            client = ChatGoogleGenerativeAI(
-                model=settings.GEMINI_CHAT_MODEL,
-                temperature=settings.CHAT_TEMPERATURE,
-                google_api_key=settings.GEMINI_API_KEY,
-                timeout=settings.PROVIDER_TIMEOUT_CHAT,
-                max_retries=1
-            )
+            try:
+                return _invoke_gemini_rest(messages)
+            except Exception as e:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                client = ChatGoogleGenerativeAI(
+                    model=settings.GEMINI_CHAT_MODEL,
+                    temperature=settings.CHAT_TEMPERATURE,
+                    google_api_key=settings.GEMINI_API_KEY,
+                    timeout=settings.PROVIDER_TIMEOUT_CHAT,
+                    max_retries=1
+                )
+                res = client.invoke(messages)
+                return str(res.content)
         else:
             if not settings.OPENAI_API_KEY or not settings.OPENAI_API_KEY.strip():
                 raise LLMConfigurationError("OpenAI API key is missing.")
@@ -120,10 +154,10 @@ def generate_chat_response(messages: List[Any]) -> str:
                 timeout=settings.PROVIDER_TIMEOUT_CHAT,
                 max_retries=1
             )
-        res = client.invoke(messages)
-        if res is None or res.content is None or str(res.content).strip() == "":
-            raise LLMGenerationError("Received empty content from LLM provider.")
-        return str(res.content)
+            res = client.invoke(messages)
+            if res is None or res.content is None or str(res.content).strip() == "":
+                raise LLMGenerationError("Received empty content from LLM provider.")
+            return str(res.content)
 
     # 1. Primary provider attempt
     primary = settings.AI_PROVIDER
