@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # OpenAI Config
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
+    CHAT_MODEL: str = "gpt-4o-mini"  # alias used by llm.py
+    CHAT_TEMPERATURE: float = 0.3  # temperature for chat LLM responses
     
     # Configurable AI Provider
     AI_PROVIDER: str = "openai"  # "openai" or "gemini"
@@ -44,11 +46,14 @@ class Settings(BaseSettings):
     RAG_TOP_K: int = 5
     RAG_MAX_TOP_K: int = 20
     RAG_MAX_CONTEXT_CHARS: int = 12000
+    RAG_MAX_QUESTION_CHARS: int = 1000  # max question length in characters
     
-    # RAG Chat Configuration
-    CHAT_MODEL: str = "gpt-4o-mini"
-    CHAT_TEMPERATURE: float = 0.0
-    RAG_MAX_QUESTION_CHARS: int = 1000
+    # RAG Tuning & Production Config
+    SIMILARITY_THRESHOLD: float = 0.20
+    MMR_LAMBDA: float = 0.60
+    ENABLE_HYBRID_SEARCH: bool = True
+    ENABLE_STREAMING: bool = True
+    CONVERSATION_HISTORY_LIMIT: int = 10
     
     # Provider Timeouts (seconds)
     PROVIDER_TIMEOUT_EMBEDDING: float = 10.0

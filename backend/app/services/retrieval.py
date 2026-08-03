@@ -32,6 +32,84 @@ class InvalidRetrievalQueryError(RetrievalError):
     """Raised when a retrieval query is invalid."""
     pass
 
+import re
+
+def apply_hybrid_mmr_search(
+    raw_results: List[Dict[str, Any]],
+    query: str,
+    top_k: int,
+    similarity_threshold: float = 0.20,
+    mmr_lambda: float = 0.60
+) -> List[Dict[str, Any]]:
+    """
+    Applies Hybrid Keyword Fusion + MMR (Maximum Marginal Relevance) selection.
+    1. Filters out results below similarity_threshold.
+    2. Fuses BM25 token overlap score with vector similarity score.
+    3. Selects top_k non-redundant chunks using MMR.
+    """
+    if not raw_results:
+        return []
+
+    query_tokens = set(re.findall(r'\b\w+\b', query.lower()))
+    scored_items = []
+    
+    for item in raw_results:
+        content = item.get("content") or item.get("metadata", {}).get("chunk_text", "")
+        content_tokens = set(re.findall(r'\b\w+\b', content.lower()))
+        
+        bm25_score = 0.0
+        if query_tokens and content_tokens:
+            overlap = query_tokens.intersection(content_tokens)
+            bm25_score = len(overlap) / len(query_tokens)
+            
+        v_score = item.get("score", 0.5)
+        hybrid_score = 0.75 * v_score + 0.25 * bm25_score
+        
+        if hybrid_score >= similarity_threshold or v_score >= similarity_threshold:
+            scored_items.append({
+                "item": item,
+                "vector_score": v_score,
+                "hybrid_score": hybrid_score,
+                "content": content
+            })
+
+    if not scored_items:
+        scored_items = [{"item": item, "vector_score": item.get("score", 0.5), "hybrid_score": item.get("score", 0.5), "content": item.get("content") or item.get("metadata", {}).get("chunk_text", "")} for item in raw_results]
+
+    scored_items.sort(key=lambda x: x["hybrid_score"], reverse=True)
+
+    selected = []
+    unselected = scored_items.copy()
+
+    while unselected and len(selected) < top_k:
+        best_candidate = None
+        best_mmr = -float("inf")
+        
+        for cand in unselected:
+            cand_score = cand["hybrid_score"]
+            max_sim_to_selected = 0.0
+            if selected:
+                cand_words = set(re.findall(r'\b\w+\b', cand["content"].lower()))
+                for sel in selected:
+                    sel_words = set(re.findall(r'\b\w+\b', sel["content"].lower()))
+                    if cand_words and sel_words:
+                        overlap = len(cand_words.intersection(sel_words)) / max(len(cand_words), len(sel_words))
+                        if overlap > max_sim_to_selected:
+                            max_sim_to_selected = overlap
+
+            mmr_val = mmr_lambda * cand_score - (1.0 - mmr_lambda) * max_sim_to_selected
+            if mmr_val > best_mmr:
+                best_mmr = mmr_val
+                best_candidate = cand
+
+        if best_candidate:
+            selected.append(best_candidate)
+            unselected.remove(best_candidate)
+        else:
+            break
+
+    return [s["item"] for s in selected]
+
 # -------------------------------------------------------------
 # Semantic Retrieval Service Function
 # -------------------------------------------------------------
@@ -172,14 +250,27 @@ async def retrieve_context(
             from app.services.vector_store import _inmemory_store
             logger.warning(f"[RAG Fallback] 0 matches from similarity search. Fetching indexed chunks directly for user {user_id}...")
             fallback_matches = []
-            for v_id, meta in _inmemory_store.items():
+            for v_id, store_item in _inmemory_store.items():
+                meta = store_item.get("metadata", store_item)
                 if meta.get("user_id") == str(user_id):
                     fallback_matches.append({
                         "id": v_id,
                         "score": 0.95,
-                        "metadata": meta
+                        "content": store_item.get("content", ""),
+                        "metadata": meta,
+                        "distance": 0.05,
+                        "similarity": 0.95
                     })
             raw_results = fallback_matches[:search_limit]
+
+        # Apply Hybrid Search (Vector + BM25) and MMR selection for zero chunk redundancy
+        raw_results = apply_hybrid_mmr_search(
+            raw_results=raw_results,
+            query=query,
+            top_k=search_limit,
+            similarity_threshold=settings.SIMILARITY_THRESHOLD,
+            mmr_lambda=settings.MMR_LAMBDA
+        )
 
     except Exception as e:
         logger.error(f"Vector search failed: {e}")

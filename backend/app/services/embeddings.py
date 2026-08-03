@@ -24,14 +24,32 @@ from app.services.exceptions import (
 # Gemini Native Client (using google.genai SDK directly)
 # -------------------------------------------------------------
 
+_EMBEDDING_CACHE = {}
+
+def get_cached_embedding(text: str) -> Optional[List[float]]:
+    import hashlib
+    key = hashlib.sha256(text.encode('utf-8')).hexdigest()
+    return _EMBEDDING_CACHE.get(key)
+
+def set_cached_embedding(text: str, vec: List[float]):
+    import hashlib
+    if len(_EMBEDDING_CACHE) > 5000:
+        _EMBEDDING_CACHE.clear()
+    key = hashlib.sha256(text.encode('utf-8')).hexdigest()
+    _EMBEDDING_CACHE[key] = vec
+
 class _GeminiEmbeddingsClient:
-    """Thin wrapper around GoogleGenerativeAIEmbeddings & google.genai with deterministic fallback."""
+    """Thin wrapper around GoogleGenerativeAIEmbeddings & google.genai with deterministic fallback and caching."""
 
     def __init__(self, model: str, api_key: str):
         self._api_key = api_key
         self._model = model
 
     def _generate_fallback_vector(self, text: str, dim: int = 768) -> List[float]:
+        cached = get_cached_embedding(text)
+        if cached:
+            return cached
+
         import hashlib
         import math
         import re
@@ -39,9 +57,10 @@ class _GeminiEmbeddingsClient:
         clean_text = text.lower()
         words = re.findall(r'\b\w+\b', clean_text)
         if not words:
-            return [1.0 / math.sqrt(dim)] * dim
+            vec = [1.0 / math.sqrt(dim)] * dim
+            set_cached_embedding(text, vec)
+            return vec
 
-        # Extract character n-grams (3-grams & 4-grams) + word tokens for rich feature overlap
         tokens = set(words)
         for w in words:
             if len(w) >= 3:
@@ -59,10 +78,18 @@ class _GeminiEmbeddingsClient:
 
         norm = math.sqrt(sum(x * x for x in vec))
         if norm > 1e-9:
-            return [x / norm for x in vec]
-        return [1.0 / math.sqrt(dim)] * dim
+            res = [x / norm for x in vec]
+        else:
+            res = [1.0 / math.sqrt(dim)] * dim
+
+        set_cached_embedding(text, res)
+        return res
 
     def _embed_via_rest(self, text: str) -> Optional[List[float]]:
+        cached = get_cached_embedding(text)
+        if cached:
+            return cached
+
         if not self._api_key or not self._api_key.strip():
             return None
         import time
@@ -77,6 +104,7 @@ class _GeminiEmbeddingsClient:
                     data = json.loads(resp.read().decode('utf-8'))
                     vals = data.get("embedding", {}).get("values")
                     if vals and isinstance(vals, list):
+                        set_cached_embedding(text, vals)
                         return vals
             except Exception as e:
                 logger.warning(f"REST Gemini embedding attempt {attempt+1} failed: {e}")

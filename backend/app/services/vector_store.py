@@ -141,6 +141,7 @@ def query_similarity(
             "id": item["id"],
             "content": item["content"],
             "metadata": item["metadata"],
+            "score": sim,           # used by apply_hybrid_mmr_search for BM25 fusion
             "distance": 1.0 - sim,
             "similarity": sim
         })

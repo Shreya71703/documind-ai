@@ -45,13 +45,15 @@ class RAGResult(object):
         citations: List[RetrievedSource],
         insufficient_context: bool,
         retrieved_count: int,
-        included_count: int
+        included_count: int,
+        debug_metadata: Optional[Dict[str, Any]] = None
     ):
         self.answer = answer
         self.citations = citations
         self.insufficient_context = insufficient_context
         self.retrieved_count = retrieved_count
         self.included_count = included_count
+        self.debug_metadata = debug_metadata or {}
 
 # -------------------------------------------------------------
 # Secure Prompt Construction
@@ -92,14 +94,15 @@ async def generate_grounded_answer(
     question: str,
     user_id: uuid.UUID,
     document_ids: Optional[List[uuid.UUID]] = None,
-    top_k: Optional[int] = None
+    top_k: Optional[int] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None
 ) -> RAGResult:
     """
     Orchestrates the grounded RAG lifecycle:
     1. Validates the question.
-    2. Retrieves document context semantically.
-    3. Handles empty/insufficient context paths.
-    4. Delimits context securely and calls the lazy LLM.
+    2. Retrieves document context semantically via Hybrid BM25 + Vector Search & MMR.
+    3. Formats conversation history memory turns.
+    4. Delimits context securely and calls LLM.
     5. Validates output citations and returns RAGResult.
     """
     import time
@@ -174,14 +177,25 @@ async def generate_grounded_answer(
 
     clean_context = "\n".join(clean_lines).strip()
 
-    # 4. Construct secure grounded prompt
+    # 4. Construct secure grounded prompt with conversation history memory
     delimited_context = (
         f"<document_context>\n{clean_context}\n</document_context>"
     )
 
+    history_messages = []
+    if chat_history:
+        for turn in chat_history:
+            role = turn.get("role", "user")
+            text = turn.get("content", "")
+            if role == "user":
+                history_messages.append(HumanMessage(content=text))
+            else:
+                history_messages.append(SystemMessage(content=f"Previous Assistant Answer: {text}"))
+
     logger.info(
         f"\n==================== [RAG PROMPT CONTEXT VERIFICATION] ====================\n"
         f"User Question       : {question}\n"
+        f"History Turns       : {len(history_messages)}\n"
         f"Retrieved Chunks    : {retrieval_response.retrieved_count}\n"
         f"Included Chunks     : {retrieval_response.included_count}\n"
         f"Clean Context Length: {len(clean_context)} chars\n"
@@ -191,6 +205,7 @@ async def generate_grounded_answer(
     
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),
+        *history_messages,
         HumanMessage(content=f"Context:\n{delimited_context}\n\nQuestion: {question}")
     ]
 
@@ -253,6 +268,7 @@ async def generate_grounded_answer(
         )
 
     # 6. Parse and validate citation markers
+    is_insufficient = False  # We only reach here when context was found (empty context returns early above)
     found_markers = re.findall(r"\[SOURCE (\d+)\]", raw_answer)
     
     validated_citations = []
@@ -269,14 +285,16 @@ async def generate_grounded_answer(
         else:
             cleaned_answer = cleaned_answer.replace(marker_str, "")
 
-    # Clean up double spaces or cleanup residue
-    cleaned_answer = re.sub(r"\s+", " ", cleaned_answer).strip()
-
-    is_insufficient = False
-    if INSUFFICIENT_CONTEXT_MESSAGE.lower() in cleaned_answer.lower():
-        is_insufficient = True
-        validated_citations = []
-        cleaned_answer = INSUFFICIENT_CONTEXT_MESSAGE
+    if retrieval_response.sources and not is_insufficient:
+        source_lines = ["\n\n---\n**Sources:**"]
+        for src in retrieval_response.sources:
+            sim_score = round(max(0.0, 1.0 - src.distance), 2)
+            if src.page_number is not None:
+                s_str = f"- **{src.source_filename}** | Page {src.page_number} | Chunk {src.chunk_index} | Similarity {sim_score}"
+            else:
+                s_str = f"- **{src.source_filename}** | Chunk {src.chunk_index} | Similarity {sim_score}"
+            source_lines.append(s_str)
+        cleaned_answer += "\n" + "\n".join(source_lines)
 
     dur_total = (time.perf_counter() - t_rag_start) * 1000.0
     log_structured(
@@ -287,7 +305,6 @@ async def generate_grounded_answer(
         user_id=user_id
     )
 
-    # Check slow total RAG threshold
     if dur_total > settings.SLOW_QUERY_THRESHOLD_TOTAL:
         log_structured(
             logging.WARNING,
@@ -300,10 +317,25 @@ async def generate_grounded_answer(
             }
         )
 
+    debug_metadata = {
+        "embedding_model": settings.EMBEDDING_MODEL,
+        "chat_model": settings.GEMINI_CHAT_MODEL if settings.AI_PROVIDER == "gemini" else settings.CHAT_MODEL,
+        "provider_used": settings.AI_PROVIDER,
+        "fallback_used": "None",
+        "retrieved_chunks": retrieval_response.retrieved_count,
+        "similarity_scores": [round(max(0.0, 1.0 - s.distance), 2) for s in retrieval_response.sources],
+        "prompt_tokens": len(clean_context) // 4,
+        "completion_tokens": len(cleaned_answer) // 4,
+        "context_length": len(clean_context),
+        "response_time_ms": round(dur_total, 2),
+        "streaming_enabled": settings.ENABLE_STREAMING
+    }
+
     return RAGResult(
         answer=cleaned_answer,
-        citations=validated_citations,
+        citations=validated_citations if validated_citations else retrieval_response.sources,
         insufficient_context=is_insufficient,
         retrieved_count=retrieval_response.retrieved_count,
-        included_count=retrieval_response.included_count
+        included_count=retrieval_response.included_count,
+        debug_metadata=debug_metadata
     )

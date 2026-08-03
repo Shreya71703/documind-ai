@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.document import RetrievedSource
@@ -75,6 +75,7 @@ class ChatMessageResponse(BaseModel):
     role: str
     content: str
     citations: Optional[List[RetrievedSource]] = Field(None, alias="sources")
+    debug_metadata: Optional[Dict[str, Any]] = None
     created_at: datetime
 
     # Configure Pydantic v2 to load from ORM attributes and allow aliases in serialization

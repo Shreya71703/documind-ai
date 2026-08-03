@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.limiter import limiter
 from app.api.dependencies import get_current_user
@@ -288,13 +289,29 @@ async def ask_question_endpoint(
             detail="Failed to store user message."
         )
 
-    # 4. Generate grounded RAG answer
+    # 4. Fetch conversation history memory turns
+    stmt_history = (
+        select(ChatMessage)
+        .where(ChatMessage.chat_session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    res_history = await db.execute(stmt_history)
+    history_records = res_history.scalars().all()
+    
+    chat_history = [
+        {"role": msg.role.value if hasattr(msg.role, "value") else str(msg.role), "content": msg.content}
+        for msg in history_records
+        if msg.id != user_msg.id
+    ][-settings.CONVERSATION_HISTORY_LIMIT:]
+
+    # 5. Generate grounded RAG answer
     try:
         rag_result = await generate_grounded_answer(
             db=db,
             question=question_in.question,
             user_id=current_user.id,
-            document_ids=document_ids
+            document_ids=document_ids,
+            chat_history=chat_history
         )
     except RAGError as exc:
         await db.rollback()
@@ -310,7 +327,7 @@ async def ask_question_endpoint(
             detail="Grounded answer generation failed."
         )
 
-    # 5. Persist validated assistant response with citations
+    # 5. Persist validated assistant response with citations & debug metadata
     citations_data = [c.model_dump(mode="json") for c in rag_result.citations] if rag_result.citations else None
     
     assistant_msg = ChatMessage(
@@ -334,4 +351,94 @@ async def ask_question_endpoint(
             detail="Failed to store assistant response."
         )
 
-    return assistant_msg
+    res_data = ChatMessageResponse.model_validate(assistant_msg)
+    res_data.debug_metadata = getattr(rag_result, "debug_metadata", {})
+    return res_data
+
+
+@router.post("/{session_id}/messages/stream")
+async def stream_question_endpoint(
+    session_id: uuid.UUID,
+    question_in: ChatQuestionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Streams the assistant response token-by-token using Server-Sent Events (SSE).
+    """
+    from fastapi.responses import StreamingResponse
+    import asyncio, json
+
+    stmt = (
+        select(ChatSession)
+        .options(selectinload(ChatSession.documents))
+        .where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == current_user.id
+        )
+    )
+    res = await db.execute(stmt)
+    session = res.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+
+    document_ids = [doc.id for doc in session.documents if doc.index_status == "indexed"]
+    if not document_ids:
+        stmt_all = select(Document.id).where(
+            Document.user_id == current_user.id,
+            Document.index_status == "indexed"
+        )
+        res_all = await db.execute(stmt_all)
+        document_ids = [row[0] for row in res_all.all()]
+
+    user_msg = ChatMessage(chat_session_id=session_id, role=MessageRole.USER, content=question_in.question)
+    db.add(user_msg)
+    await db.commit()
+
+    stmt_history = (
+        select(ChatMessage)
+        .where(ChatMessage.chat_session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+    )
+    res_history = await db.execute(stmt_history)
+    history_records = res_history.scalars().all()
+    
+    chat_history = [
+        {"role": msg.role.value if hasattr(msg.role, "value") else str(msg.role), "content": msg.content}
+        for msg in history_records
+        if msg.id != user_msg.id
+    ][-settings.CONVERSATION_HISTORY_LIMIT:]
+
+    async def event_generator():
+        rag_result = await generate_grounded_answer(
+            db=db,
+            question=question_in.question,
+            user_id=current_user.id,
+            document_ids=document_ids,
+            chat_history=chat_history
+        )
+        words = rag_result.answer.split(" ")
+        for i in range(0, len(words), 2):
+            chunk = " ".join(words[i:i+2]) + " "
+            yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
+            await asyncio.sleep(0.015)
+        
+        citations_data = [c.model_dump(mode="json") for c in rag_result.citations] if rag_result.citations else None
+        assistant_msg = ChatMessage(
+            chat_session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content=rag_result.answer,
+            sources=citations_data
+        )
+        db.add(assistant_msg)
+        await db.commit()
+        
+        done_payload = json.dumps({
+            'token': '',
+            'done': True,
+            'citations': citations_data,
+            'debug_metadata': getattr(rag_result, 'debug_metadata', {})
+        })
+        yield f"data: {done_payload}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

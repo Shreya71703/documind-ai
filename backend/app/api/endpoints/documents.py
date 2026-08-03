@@ -336,6 +336,7 @@ async def index_document_endpoint(
         doc_id = document.id
         doc_path = document.storage_path
         doc_filename = document.original_filename
+        fallback_txt = document.extracted_text
         user_id = current_user.id
         
         # 4. Extract and chunk using Step 5 document_processor
@@ -344,7 +345,8 @@ async def index_document_endpoint(
             process_document,
             document_id=doc_id,
             file_path=doc_path,
-            original_filename=doc_filename
+            original_filename=doc_filename,
+            fallback_text=fallback_txt
         )
         
         # 5. Extract texts and generate embeddings

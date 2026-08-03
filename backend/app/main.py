@@ -125,6 +125,21 @@ async def provider_response_handler(request: Request, exc: ProviderResponseError
         content={"detail": detail}
     )
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    import logging
+    logging.error(f"Global Exception caught: {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Internal Server Error: {str(exc)}",
+            "error_type": type(exc).__name__,
+            "traceback": tb.splitlines()[-10:]
+        }
+    )
+
 @app.get("/", tags=["Health"])
 @limiter.limit("5/minute")
 def read_root(request: Request):
@@ -147,5 +162,5 @@ def health_check(test_embed: bool = False):
     return {
         "status": "healthy",
         "timestamp": time.time(),
-        "deploy_tag": "v_grounded_200"
+        "deploy_tag": "v_fix_cors_autoindex_301"
     }

@@ -26,7 +26,7 @@ import {
 
 const RAG_MAX_QUESTION_CHARS = 4000;
 
-import { apiRequest } from './lib/api';
+import { apiRequest, streamChatMessage } from './lib/api';
 import { DocumentUpload } from './components/DocumentUpload';
 import { DocumentList, DocumentItem } from './components/DocumentList';
 import { NewChatModal } from './components/NewChatModal';
@@ -292,6 +292,7 @@ interface MessageItem {
   role: 'user' | 'assistant';
   content: string;
   sources?: RetrievedSource[] | null;
+  debug_metadata?: any;
 }
 
 const WorkspacePage: React.FC = () => {
@@ -331,42 +332,29 @@ const WorkspacePage: React.FC = () => {
   const fetchDocs = async () => {
     try {
       setIsLoadingDocs(true);
-      // Reset documents stuck in "indexing" state from previous crashed server instances
-      try {
-        await apiRequest('/api/v1/documents/reset-stuck', { method: 'POST' });
-      } catch {
-        // Non-critical — if it fails, proceed anyway
-      }
       const data = await apiRequest('/api/v1/documents');
       setDocuments(data);
-      // Auto-retry pipeline for documents that never completed processing or indexing
-      for (const doc of data) {
-        if (doc.status === 'uploaded') {
-          // Needs both process + index
-          try {
-            await apiRequest(`/api/v1/documents/${doc.id}/process`, { method: 'POST' });
-            await apiRequest(`/api/v1/documents/${doc.id}/index`, { method: 'POST' });
-          } catch {
-            // Non-fatal — DocumentList allows manual retry
-          }
-        } else if (doc.status === 'ready' && (doc.index_status === 'not_indexed' || doc.index_status === 'failed')) {
-          // Processed but not indexed
-          try {
-            await apiRequest(`/api/v1/documents/${doc.id}/index`, { method: 'POST' });
-          } catch {
-            // Non-fatal
-          }
-        }
-      }
-      // Refresh document list to show updated statuses after pipeline runs
-      const refreshed = await apiRequest('/api/v1/documents');
-      setDocuments(refreshed);
     } catch (err: any) {
       console.error('Failed to load documents: ', err.message);
     } finally {
       setIsLoadingDocs(false);
     }
   };
+
+  // Lightweight polling: refresh document list every 5s while any doc is still indexing/processing.
+  // This shows updated statuses without triggering new pipeline calls.
+  useEffect(() => {
+    const hasPending = documents.some(
+      (d) => d.index_status === 'indexing' || d.status === 'processing' || d.status === 'uploaded'
+    );
+    if (!hasPending) return;
+    const timer = setInterval(() => {
+      apiRequest('/api/v1/documents')
+        .then((refreshed) => setDocuments(refreshed))
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [documents]);
 
   const fetchSessions = async () => {
     try {
@@ -486,35 +474,50 @@ const WorkspacePage: React.FC = () => {
     setQuestion('');
     setAskError(null);
     setIsAsking(true);
-    setActiveStage('Searching documents and generating answer...');
+    setActiveStage('Searching vector index & generating streaming answer...');
 
-    // Optimistically add user message log
     const userMsgOptimistic: MessageItem = {
       id: crypto.randomUUID(),
       role: 'user',
       content: queryText
     };
-    setMessages((prev) => [...prev, userMsgOptimistic]);
 
-    try {
-      const data = await apiRequest(`/api/v1/chats/${sessionId}/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ question: queryText }),
-      });
+    const assistantMsgId = crypto.randomUUID();
+    const assistantMsgOptimistic: MessageItem = {
+      id: assistantMsgId,
+      role: 'assistant',
+      content: '',
+      sources: [],
+      debug_metadata: undefined
+    };
 
-      // Update state logs
-      setMessages((prev) => [...prev, data]);
-    } catch (err: any) {
-      setAskError(err.message || 'Failed to generate response.');
-      // Remove optimistic message on request failure
-      setMessages((prev) => prev.filter((m) => m.id !== userMsgOptimistic.id));
-    } finally {
-      setIsAsking(false);
-      setActiveStage(null);
-    }
+    setMessages((prev) => [...prev, userMsgOptimistic, assistantMsgOptimistic]);
+
+    await streamChatMessage(
+      sessionId,
+      queryText,
+      (token) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantMsgId ? { ...m, content: m.content + token } : m))
+        );
+      },
+      (citations, debugMetadata) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, sources: citations, debug_metadata: debugMetadata }
+              : m
+          )
+        );
+        setIsAsking(false);
+        setActiveStage(null);
+      },
+      (err) => {
+        setAskError(err.message || 'Failed to generate response.');
+        setIsAsking(false);
+        setActiveStage(null);
+      }
+    );
   };
 
   return (
@@ -717,7 +720,29 @@ const WorkspacePage: React.FC = () => {
                     {isUser ? (
                       <p className="whitespace-pre-wrap">{msg.content}</p>
                     ) : (
-                      <MessageContent content={msg.content} citations={msg.sources || []} />
+                      <>
+                        <MessageContent content={msg.content} citations={msg.sources || []} />
+                        {msg.debug_metadata && (
+                          <details className="mt-3 text-[10px] text-slate-400 bg-slate-950/80 rounded-xl p-3 border border-slate-800/80">
+                            <summary className="cursor-pointer font-bold text-violet-400 hover:text-violet-300 flex items-center gap-1.5 select-none">
+                              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>RAG Debug Metrics</span>
+                            </summary>
+                            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 pt-2 border-t border-slate-800/60 font-mono text-[10px]">
+                              <div><span className="text-slate-500">Provider:</span> {msg.debug_metadata.provider_used}</div>
+                              <div><span className="text-slate-500">Chat Model:</span> {msg.debug_metadata.chat_model}</div>
+                              <div><span className="text-slate-500">Embedding Model:</span> {msg.debug_metadata.embedding_model}</div>
+                              <div><span className="text-slate-500">Retrieved Chunks:</span> {msg.debug_metadata.retrieved_chunks}</div>
+                              <div><span className="text-slate-500">Similarity Scores:</span> {JSON.stringify(msg.debug_metadata.similarity_scores)}</div>
+                              <div><span className="text-slate-500">Response Time:</span> {msg.debug_metadata.response_time_ms} ms</div>
+                              <div><span className="text-slate-500">Prompt Tokens:</span> ~{msg.debug_metadata.prompt_tokens}</div>
+                              <div><span className="text-slate-500">Completion Tokens:</span> ~{msg.debug_metadata.completion_tokens}</div>
+                              <div><span className="text-slate-500">Context Length:</span> {msg.debug_metadata.context_length} chars</div>
+                              <div><span className="text-slate-500">Streaming:</span> {msg.debug_metadata.streaming_enabled ? 'Enabled' : 'Disabled'}</div>
+                            </div>
+                          </details>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

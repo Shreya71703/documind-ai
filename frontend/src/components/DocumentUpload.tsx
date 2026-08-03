@@ -25,9 +25,11 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadSuccess 
       if (startStage === 'process') {
         setStatusMsg('Processing document content...');
         await apiRequest(`/api/v1/documents/${docId}/process`, { method: 'POST' });
+        // Trigger refresh immediately after processing so the doc appears in the list
+        onUploadSuccess();
       }
 
-      setStatusMsg('Indexing vectors...');
+      setStatusMsg('Indexing vectors — this may take 10–30s...');
       await apiRequest(`/api/v1/documents/${docId}/index`, { method: 'POST' });
 
       setStatusMsg(null);
@@ -35,7 +37,16 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadSuccess 
     } catch (err: any) {
       setFailedDocId(docId);
       setFailedStage(startStage);
-      setErrorMsg(err.message || 'Pipeline stage execution failed.');
+      // Surface a friendlier message for network/proxy timeout errors
+      const rawMsg: string = err?.message || '';
+      const isTimeout = rawMsg.toLowerCase().includes('reach') || rawMsg.toLowerCase().includes('timeout') || err?.status === 0;
+      if (isTimeout && startStage === 'index') {
+        setErrorMsg('Indexing is taking longer than expected. The document will finish in the background — click Retry Index if the status doesn\'t update in 30 seconds.');
+      } else {
+        setErrorMsg(rawMsg || 'Pipeline stage execution failed.');
+      }
+      // Always refresh so UI shows latest status from server
+      onUploadSuccess();
       setStatusMsg(null);
     }
   }, [onUploadSuccess]);

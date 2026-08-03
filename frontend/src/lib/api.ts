@@ -160,3 +160,60 @@ export async function apiRequest(
 
   return data;
 }
+
+export async function streamChatMessage(
+  sessionId: string,
+  question: string,
+  onToken: (token: string) => void,
+  onDone: (citations: any[], debugMetadata: any) => void,
+  onError: (err: Error) => void
+) {
+  try {
+    const response = await fetch(`${BASE_URL}/api/v1/chats/${sessionId}/messages/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ question }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Streaming request failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr) {
+            try {
+              const data = JSON.parse(jsonStr);
+              if (data.token) {
+                onToken(data.token);
+              }
+              if (data.done) {
+                onDone(data.citations || [], data.debug_metadata || {});
+              }
+            } catch {
+              // Ignore partial JSON
+            }
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    onError(err);
+  }
+}
