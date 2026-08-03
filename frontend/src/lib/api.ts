@@ -13,6 +13,21 @@ export class ApiError extends Error {
 // Live production backend URL on Render
 const LIVE_BACKEND_URL = 'https://documind-backend-j6el.onrender.com';
 
+// Wakeup: ping /health until backend responds (handles Render free-tier cold starts ~30s)
+async function wakeupBackend(baseUrl: string): Promise<void> {
+  const maxAttempts = 14;
+  const delayMs = 2500;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const r = await fetch(`${baseUrl}/health`, { method: 'GET', signal: AbortSignal.timeout(4000) });
+      if (r.ok) return;
+    } catch {
+      // still sleeping, wait and retry
+    }
+    await new Promise((res) => setTimeout(res, delayMs));
+  }
+}
+
 function resolveBaseUrl(): string {
   let rawBaseUrl =
     (import.meta as any).env.VITE_API_BASE_URL ||
@@ -77,10 +92,11 @@ export async function apiRequest(
       ...options,
       headers,
     });
-  } catch (err: any) {
-    // Retry once after 1.5s in case backend is waking up from sleep on Render free tier
+  } catch {
+    // First fetch failed — backend may be cold-starting on Render free tier (~30s wake time)
+    // Wait for it to become healthy before retrying the real request
     try {
-      await new Promise((res) => setTimeout(res, 1500));
+      await wakeupBackend(BASE_URL);
       response = await fetch(fullUrl, {
         ...options,
         headers,
@@ -88,8 +104,8 @@ export async function apiRequest(
     } catch (retryErr: any) {
       const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1');
       const userMessage = isLocal
-        ? `Unable to connect to local backend service at ${BASE_URL}. Please ensure your FastAPI server is running.`
-        : `Network Error: Unable to reach backend API server at ${fullUrl}. Details: ${retryErr?.message || 'Failed to fetch'}. Please verify backend status and CORS configuration.`;
+        ? `Unable to connect to local backend at ${BASE_URL}. Please ensure your FastAPI server is running.`
+        : `Unable to reach the backend server. It may still be waking up — please wait a moment and try again.`;
 
       throw new ApiError(userMessage, 0, undefined, { originalError: retryErr?.message, url: fullUrl });
     }

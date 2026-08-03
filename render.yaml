@@ -32,10 +32,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: documind-backend
-          property: host
+        value: https://documind-backend-j6el.onrender.com
 
 databases:
   - name: documind-db

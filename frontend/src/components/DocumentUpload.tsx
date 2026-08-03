@@ -76,6 +76,25 @@ export const DocumentUpload: React.FC<DocumentUploadProps> = ({ onUploadSuccess 
       setIsUploading(false);
       await runPipeline(data.id, 'process');
     } catch (err: any) {
+      // If the first attempt fails with a network error, it may be a cold start — show helpful status
+      if (err.status === 0) {
+        setStatusMsg('Waking up backend (may take ~30s on free tier)...');
+        try {
+          const retryData = await apiRequest('/api/v1/documents/upload', {
+            method: 'POST',
+            body: formData,
+          });
+          setIsUploading(false);
+          setStatusMsg(null);
+          await runPipeline(retryData.id, 'process');
+          return;
+        } catch (retryErr: any) {
+          setIsUploading(false);
+          setErrorMsg(retryErr.message || 'File upload failed after retry.');
+          setStatusMsg(null);
+          return;
+        }
+      }
       setIsUploading(false);
       setErrorMsg(err.message || 'File upload failed.');
       setStatusMsg(null);
