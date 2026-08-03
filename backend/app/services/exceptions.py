@@ -54,10 +54,42 @@ class ProviderResponseError(ProviderError):
 
 def normalize_exception(e: Exception) -> Exception:
     msg = str(e).lower()
+    msg_full = str(e)
+
+    # -------------------------------------------------------
+    # Fast-path: detect 429 / quota / rate-limit by message text
+    # (covers langchain-wrapped errors where isinstance checks fail)
+    # -------------------------------------------------------
+    if "429" in msg_full or "quota" in msg or "rate" in msg or "limit" in msg:
+        if "quota" in msg or "billing" in msg or "exhausted" in msg or "limit: 0" in msg_full:
+            return ProviderQuotaError(
+                "Gemini API quota exhausted. You have exceeded your free-tier limit. "
+                "Please wait a few minutes and try again, or check your API quota at https://ai.google.dev/gemini-api/docs/rate-limits",
+                original_exception=e
+            )
+        return ProviderRateLimitError(
+            "Gemini API rate limit hit. Please wait a moment and try again.",
+            original_exception=e
+        )
 
     # Check for obvious API key / Auth issues in error string
-    if "api_key" in msg or "api key" in msg or "unauthorized" in msg or "invalid key" in msg or "permissiondenied" in msg:
+    if "api_key" in msg or "api key" in msg or "unauthorized" in msg or "invalid key" in msg or "permissiondenied" in msg or "401" in msg_full or "403" in msg_full:
         return ProviderAuthenticationError("Invalid or missing AI API Key. Please check your GEMINI_API_KEY.", original_exception=e)
+
+    # Timeout detection
+    if "timeout" in msg or "deadline" in msg or "timed out" in msg or "504" in msg_full:
+        return ProviderTimeoutError("Provider request timed out.", original_exception=e)
+
+    # Server errors
+    if "500" in msg_full or "502" in msg_full or "503" in msg_full or "unavailable" in msg or "server error" in msg:
+        return ProviderUnavailableError("Provider is temporarily offline or unavailable.", original_exception=e)
+
+    # Model not found
+    if "404" in msg_full or "not found" in msg or "not supported" in msg:
+        return ProviderResponseError(
+            f"AI model not found or not supported. Please check GEMINI_CHAT_MODEL config. Error: {msg_full[:300]}",
+            original_exception=e
+        )
 
     # 1. Check if it's an OpenAI error
     try:
@@ -84,14 +116,14 @@ def normalize_exception(e: Exception) -> Exception:
             code = getattr(e, "code", getattr(e, "status_code", None))
             if code is None:
                 import re
-                match = re.search(r'\b(401|403|429|503|504)\b', msg)
+                match = re.search(r'\b(401|403|429|503|504)\b', msg_full)
                 if match:
                     code = int(match.group(1))
             
             if code in (401, 403) or "auth" in msg or "api key" in msg or "invalid" in msg:
                 return ProviderAuthenticationError("Invalid or missing Gemini API key.", original_exception=e)
             if code == 429 or "quota" in msg or "limit" in msg or "rate" in msg:
-                if "quota" in msg or "exhausted" in msg or "insufficient" in msg:
+                if "quota" in msg or "exhausted" in msg or "insufficient" in msg or "limit: 0" in msg_full:
                     return ProviderQuotaError("Provider account quota/billing exhausted.", original_exception=e)
                 return ProviderRateLimitError("Provider rate limit exceeded.", original_exception=e)
             if code == 504 or "timeout" in msg or "deadline" in msg:

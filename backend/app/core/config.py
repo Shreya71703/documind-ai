@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     
     # Gemini Config
     GEMINI_API_KEY: str = ""
-    GEMINI_CHAT_MODEL: str = "gemini-2.0-flash"
+    GEMINI_CHAT_MODEL: str = "gemini-2.0-flash-lite"
     GEMINI_EMBEDDING_MODEL: str = "models/embedding-001"
     
     # Storage Configuration
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     
     # Provider Timeouts (seconds)
     PROVIDER_TIMEOUT_EMBEDDING: float = 10.0
-    PROVIDER_TIMEOUT_CHAT: float = 30.0
+    PROVIDER_TIMEOUT_CHAT: float = 60.0
 
     # Slow Query Thresholds (milliseconds)
     SLOW_QUERY_THRESHOLD_RETRIEVAL: float = 1500.0

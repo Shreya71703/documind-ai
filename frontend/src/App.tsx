@@ -339,16 +339,28 @@ const WorkspacePage: React.FC = () => {
       }
       const data = await apiRequest('/api/v1/documents');
       setDocuments(data);
-      // Auto-retry indexing for any documents in not_indexed or failed state
+      // Auto-retry pipeline for documents that never completed processing or indexing
       for (const doc of data) {
-        if (doc.status === 'ready' && (doc.index_status === 'not_indexed' || doc.index_status === 'failed')) {
+        if (doc.status === 'uploaded') {
+          // Needs both process + index
+          try {
+            await apiRequest(`/api/v1/documents/${doc.id}/process`, { method: 'POST' });
+            await apiRequest(`/api/v1/documents/${doc.id}/index`, { method: 'POST' });
+          } catch {
+            // Non-fatal — DocumentList allows manual retry
+          }
+        } else if (doc.status === 'ready' && (doc.index_status === 'not_indexed' || doc.index_status === 'failed')) {
+          // Processed but not indexed
           try {
             await apiRequest(`/api/v1/documents/${doc.id}/index`, { method: 'POST' });
           } catch {
-            // Ignore per-doc errors — DocumentList handles retries
+            // Non-fatal
           }
         }
       }
+      // Refresh document list to show updated statuses after pipeline runs
+      const refreshed = await apiRequest('/api/v1/documents');
+      setDocuments(refreshed);
     } catch (err: any) {
       console.error('Failed to load documents: ', err.message);
     } finally {
