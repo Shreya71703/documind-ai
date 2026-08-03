@@ -106,7 +106,11 @@ def _invoke_gemini_rest(messages: List[Any]) -> str:
     url = f"https://generativelanguage.googleapis.com/v1beta/{clean_model}:generateContent?key={settings.GEMINI_API_KEY}"
     
     payload = {
-        "contents": [{"parts": [{"text": prompt_str}]}]
+        "contents": [{"parts": [{"text": prompt_str}]}],
+        "generationConfig": {
+            "temperature": float(settings.CHAT_TEMPERATURE),
+            "maxOutputTokens": 1500
+        }
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
