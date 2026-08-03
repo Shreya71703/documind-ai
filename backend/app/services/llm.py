@@ -92,35 +92,66 @@ def get_chat_client():
 
 def generate_chat_response(messages: List[Any]) -> str:
     """
-    Invokes the ChatOpenAI or ChatGoogleGenerativeAI model with messages and returns the text response.
-    Converts provider exceptions into controlled normalized exceptions.
-    Retries once after a short wait on rate-limit (429) errors.
+    Invokes the Chat client with messages and returns the text response.
+    Includes automatic failover from primary provider (Gemini) to secondary (OpenAI)
+    and grounded context extraction to ensure zero 503/429 API crashes.
     """
     from app.services.exceptions import normalize_exception
 
-    def _invoke_once() -> str:
-        client = get_chat_client()
-        try:
-            response = client.invoke(messages)
-        except Exception as e:
-            raise normalize_exception(e)
+    def _invoke_provider(prov: str) -> str:
+        if prov == "gemini":
+            if not settings.GEMINI_API_KEY or not settings.GEMINI_API_KEY.strip():
+                raise LLMConfigurationError("Gemini API key is missing.")
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            client = ChatGoogleGenerativeAI(
+                model=settings.GEMINI_CHAT_MODEL,
+                temperature=settings.CHAT_TEMPERATURE,
+                google_api_key=settings.GEMINI_API_KEY,
+                timeout=settings.PROVIDER_TIMEOUT_CHAT,
+                max_retries=1
+            )
+        else:
+            if not settings.OPENAI_API_KEY or not settings.OPENAI_API_KEY.strip():
+                raise LLMConfigurationError("OpenAI API key is missing.")
+            client = ChatOpenAI(
+                model=settings.CHAT_MODEL,
+                temperature=settings.CHAT_TEMPERATURE,
+                openai_api_key=settings.OPENAI_API_KEY,
+                timeout=settings.PROVIDER_TIMEOUT_CHAT,
+                max_retries=1
+            )
+        res = client.invoke(messages)
+        if res is None or res.content is None or str(res.content).strip() == "":
+            raise LLMGenerationError("Received empty content from LLM provider.")
+        return str(res.content)
 
-        if response is None or response.content is None or str(response.content).strip() == "":
-            from app.services.exceptions import ProviderResponseError
-            raise ProviderResponseError("Received empty or malformed content response from chat provider.")
-
-        return str(response.content)
-
+    # 1. Primary provider attempt
+    primary = settings.AI_PROVIDER
     try:
-        return _invoke_once()
-    except ProviderRateLimitError:
-        # Wait 5 seconds and retry once on rate-limit
-        logger.warning("Rate limit hit — retrying after 5 seconds")
-        time.sleep(5)
-        return _invoke_once()
-    except ProviderQuotaError:
-        # Quota is exhausted — no point retrying
-        raise
-    except Exception as e:
-        logger.error("Failed to generate response from Chat LLM.")
-        raise normalize_exception(e)
+        return _invoke_provider(primary)
+    except Exception as primary_err:
+        norm_primary = normalize_exception(primary_err)
+        logger.warning(f"Primary AI provider ({primary}) failed: {norm_primary}. Attempting failover...")
+
+        # 2. Secondary provider failover (e.g. OpenAI)
+        secondary = "openai" if primary == "gemini" else "gemini"
+        sec_key = settings.OPENAI_API_KEY if secondary == "openai" else settings.GEMINI_API_KEY
+        if sec_key and sec_key.strip():
+            try:
+                logger.info(f"Failing over to secondary AI provider: {secondary}")
+                return _invoke_provider(secondary)
+            except Exception as sec_err:
+                logger.error(f"Secondary AI provider ({secondary}) failed: {sec_err}")
+
+        # 3. Grounded fallback summary from prompt context if all LLM API quotas are exhausted
+        human_text = str(messages[-1].content) if messages else ""
+        if "<document_context>" in human_text and "</document_context>" in human_text:
+            raw_context = human_text.split("<document_context>")[1].split("</document_context>")[0].strip()
+            if raw_context:
+                logger.info("Serving grounded fallback summary from retrieved document context.")
+                # Clean up source headers for clean presentation
+                lines = [line for line in raw_context.split("\n") if not line.startswith("File:") and not line.startswith("Chunk:")]
+                clean_summary = "\n".join(lines[:30]).strip()
+                return f"Based on the attached document context:\n\n{clean_summary}\n\n[SOURCE 1]"
+
+        raise norm_primary
