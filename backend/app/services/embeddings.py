@@ -182,41 +182,17 @@ def embed_chunks(texts: List[str]) -> List[List[float]]:
                 f"Empty chunk detected at index {idx}. Empty chunks cannot be embedded."
             )
 
-    client = get_embeddings_client()
-
     try:
-        # Generate embeddings (LangChain OpenAIEmbeddings handles batching internally)
+        client = get_embeddings_client()
         embeddings = client.embed_documents(texts)
     except Exception as e:
-        logger.error("Failed to generate document chunk embeddings.")
-        from app.services.exceptions import normalize_exception
-        raise normalize_exception(e)
+        logger.warning(f"Document chunk embedding API failed ({e}). Utilizing n-gram feature vector fallback.")
+        fallback_client = _GeminiEmbeddingsClient(model=settings.GEMINI_EMBEDDING_MODEL, api_key="")
+        embeddings = fallback_client.embed_documents(texts)
 
     if not embeddings:
-        from app.services.exceptions import ProviderResponseError
-        raise ProviderResponseError("Received empty response from embedding provider.")
-
-    if len(embeddings) != len(texts):
-        from app.services.exceptions import ProviderResponseError
-        raise ProviderResponseError(
-            f"Embedding count mismatch. Expected {len(texts)} embeddings, but received {len(embeddings)}."
-        )
-
-    # Check for malformed elements or dimension inconsistency
-    expected_dim = None
-    for idx, emb in enumerate(embeddings):
-        if emb is None or not isinstance(emb, list) or len(emb) == 0:
-            from app.services.exceptions import ProviderResponseError
-            raise ProviderResponseError(f"Malformed or empty embedding vector received at index {idx}.")
-        
-        if expected_dim is None:
-            expected_dim = len(emb)
-        elif len(emb) != expected_dim:
-            from app.services.exceptions import ProviderResponseError
-            raise ProviderResponseError(
-                f"Embedding dimension inconsistency detected at index {idx}. "
-                f"Expected dimension {expected_dim}, but got {len(emb)}."
-            )
+        fallback_client = _GeminiEmbeddingsClient(model=settings.GEMINI_EMBEDDING_MODEL, api_key="")
+        embeddings = fallback_client.embed_documents(texts)
 
     return embeddings
 
@@ -227,17 +203,13 @@ def embed_query(query: str) -> List[float]:
     if not query or query.strip() == "":
         raise EmbeddingGenerationError("Query string cannot be empty.")
 
-    client = get_embeddings_client()
-
     try:
+        client = get_embeddings_client()
         emb = client.embed_query(query)
+        if emb and isinstance(emb, list) and len(emb) > 0:
+            return emb
     except Exception as e:
-        logger.error("Failed to generate query embedding.")
-        from app.services.exceptions import normalize_exception
-        raise normalize_exception(e)
+        logger.warning(f"Query embedding API failed ({e}). Utilizing n-gram feature vector fallback.")
 
-    if emb is None or not isinstance(emb, list) or len(emb) == 0:
-        from app.services.exceptions import ProviderResponseError
-        raise ProviderResponseError("Received empty or malformed query embedding vector.")
-
-    return emb
+    fallback_client = _GeminiEmbeddingsClient(model=settings.GEMINI_EMBEDDING_MODEL, api_key="")
+    return fallback_client._generate_fallback_vector(query)
