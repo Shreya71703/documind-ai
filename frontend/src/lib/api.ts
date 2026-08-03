@@ -133,16 +133,6 @@ export async function apiRequest(
     const status = response.status;
     let message = 'An unexpected error occurred. Please try again.';
 
-    if (path.includes('/messages') && (status === 503 || status === 500)) {
-      return {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: 'Based on your uploaded document: Your document is indexed and saved successfully. AI service rate limit is high, but document text is preserved.',
-        sources: null,
-        created_at: new Date().toISOString()
-      };
-    }
-
     if (data && typeof data.detail === 'string') {
       message = data.detail;
     } else if (data && typeof data.detail === 'object' && data.detail !== null) {

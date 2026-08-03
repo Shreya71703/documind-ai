@@ -90,37 +90,21 @@ async def provider_timeout_handler(request: Request, exc: ProviderTimeoutError):
 
 @app.exception_handler(ProviderQuotaError)
 async def provider_quota_handler(request: Request, exc: ProviderQuotaError):
-    import uuid
-    from datetime import datetime, timezone
     return JSONResponse(
-        status_code=200,
-        content={
-            "id": str(uuid.uuid4()),
-            "role": "assistant",
-            "content": f"Based on your uploaded document: Your document is fully indexed and saved. (AI provider high demand: {str(exc)[:100]})",
-            "sources": None,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
+        status_code=429,
+        content={"detail": "AI provider quota or billing limit exceeded."}
     )
 
 @app.exception_handler(ProviderRateLimitError)
 async def provider_rate_limit_handler(request: Request, exc: ProviderRateLimitError):
-    import uuid
-    from datetime import datetime, timezone
     return JSONResponse(
-        status_code=200,
-        content={
-            "id": str(uuid.uuid4()),
-            "role": "assistant",
-            "content": f"Based on your uploaded document: Your document is indexed and ready.",
-            "sources": None,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
+        status_code=429,
+        content={"detail": "AI provider rate limit exceeded. Please try again shortly."}
     )
 
 @app.exception_handler(ProviderAuthenticationError)
 async def provider_auth_handler(request: Request, exc: ProviderAuthenticationError):
-    detail = str(exc) if exc and str(exc) else "Invalid or missing AI API Key. Please verify your GEMINI_API_KEY in environment variables."
+    detail = str(exc) if exc and str(exc) else "Invalid or missing AI API Key."
     return JSONResponse(
         status_code=401,
         content={"detail": detail}
@@ -128,17 +112,9 @@ async def provider_auth_handler(request: Request, exc: ProviderAuthenticationErr
 
 @app.exception_handler(ProviderUnavailableError)
 async def provider_unavailable_handler(request: Request, exc: ProviderUnavailableError):
-    import uuid
-    from datetime import datetime, timezone
     return JSONResponse(
-        status_code=200,
-        content={
-            "id": str(uuid.uuid4()),
-            "role": "assistant",
-            "content": "Based on your uploaded document: Your document is indexed and stored in PostgreSQL.",
-            "sources": None,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
+        status_code=503,
+        content={"detail": "AI provider service is temporarily offline or unavailable."}
     )
 
 @app.exception_handler(ProviderResponseError)

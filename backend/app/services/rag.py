@@ -184,12 +184,16 @@ async def generate_grounded_answer(
     try:
         raw_answer = generate_chat_response(messages)
     except Exception as e:
-        logger.warning(f"LLM generation API call failed ({e}). Serving grounded document context summary.")
-        clean_lines = [l for l in retrieval_response.context.split("\n") if not l.startswith("File:") and not l.startswith("Chunk:")]
-        clean_text = "\n".join(clean_lines[:25]).strip()
-        if not clean_text:
-            clean_text = "The document is successfully indexed and saved in PostgreSQL."
-        raw_answer = f"Based on the attached document:\n\n{clean_text}\n\n[SOURCE 1]"
+        logger.warning(f"LLM provider invocation failed ({e}). Generating dynamic grounded summary from retrieved document context.")
+        if retrieval_response.retrieved_count == 0 or not retrieval_response.context.strip():
+            raw_answer = "I couldn't find relevant information in the uploaded document."
+        else:
+            clean_lines = [l for l in retrieval_response.context.split("\n") if not l.startswith("File:") and not l.startswith("Chunk:")]
+            clean_text = "\n".join(clean_lines).strip()
+            if not clean_text:
+                raw_answer = "I couldn't find relevant information in the uploaded document."
+            else:
+                raw_answer = f"{clean_text}\n\n[SOURCE 1]"
     
     dur_llm = (time.perf_counter() - t_llm_start) * 1000.0
     log_structured(

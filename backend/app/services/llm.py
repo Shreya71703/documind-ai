@@ -177,18 +177,5 @@ def generate_chat_response(messages: List[Any]) -> str:
             except Exception as sec_err:
                 logger.error(f"Secondary AI provider ({secondary}) failed: {sec_err}")
 
-        # 3. Grounded context extraction summary (GUARANTEES HTTP 200)
-        human_text = str(messages[-1].content) if messages else ""
-        if "<document_context>" in human_text:
-            try:
-                raw_context = human_text.split("<document_context>")[1].split("</document_context>")[0].strip()
-                if raw_context:
-                    logger.info("Serving grounded fallback summary from retrieved document context.")
-                    clean_lines = [l for l in raw_context.split("\n") if not l.startswith("File:") and not l.startswith("Chunk:")]
-                    summary_text = "\n".join(clean_lines[:25]).strip()
-                    return f"Based on the attached document:\n\n{summary_text}\n\n[SOURCE 1]"
-            except Exception as e:
-                logger.error(f"Context extraction failed: {e}")
-
-        # 4. Universal grounded fallback message (prevents HTTP 503 / 429 error banners in UI)
-        return "I am currently receiving high demand on the AI service. However, your document is successfully indexed and saved. Please try your question again in a moment."
+        # If secondary provider also failed or key is missing, raise the normalized primary exception
+        raise norm_primary
