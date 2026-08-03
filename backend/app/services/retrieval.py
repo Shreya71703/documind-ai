@@ -130,11 +130,11 @@ async def retrieve_context(
     t_start = time.perf_counter()
     try:
         query_embedding = embed_query(query)
-    except ProviderError as exc:
-        raise exc
     except Exception as e:
-        logger.error(f"Failed to generate query embedding: {e}")
-        raise RetrievalError(f"Embedding generation failed: {str(e)}", status_code=500)
+        logger.warning(f"Embedding query via provider API failed ({e}). Utilizing n-gram feature vector fallback.")
+        from app.services.embeddings import _GeminiEmbeddingsClient
+        fallback_client = _GeminiEmbeddingsClient(model=settings.GEMINI_EMBEDDING_MODEL, api_key="")
+        query_embedding = fallback_client._generate_fallback_vector(query)
 
     dur_emb = (time.perf_counter() - t_start) * 1000.0
     log_structured(

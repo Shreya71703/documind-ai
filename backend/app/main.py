@@ -163,5 +163,5 @@ def health_check(test_embed: bool = False):
     return {
         "status": "healthy",
         "timestamp": time.time(),
-        "deploy_tag": "v_failover_200"
+        "deploy_tag": "v_grounded_200"
     }
