@@ -1,7 +1,7 @@
 import logging
 import json
 import urllib.request
-from typing import List
+from typing import List, Optional
 
 try:
     from langchain_openai import OpenAIEmbeddings
