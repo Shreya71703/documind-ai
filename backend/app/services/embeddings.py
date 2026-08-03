@@ -53,16 +53,23 @@ class _GeminiEmbeddingsClient:
     def _embed_via_rest(self, text: str) -> Optional[List[float]]:
         if not self._api_key or not self._api_key.strip():
             return None
+        import time
         url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={self._api_key}"
         payload = json.dumps({"content": {"parts": [{"text": text}]}}).encode('utf-8')
         req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                return data.get("embedding", {}).get("values")
-        except Exception as e:
-            logger.warning(f"REST Gemini embedding failed: {e}")
-            return None
+        
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=10.0) as resp:
+                    data = json.loads(resp.read().decode('utf-8'))
+                    vals = data.get("embedding", {}).get("values")
+                    if vals and isinstance(vals, list):
+                        return vals
+            except Exception as e:
+                logger.warning(f"REST Gemini embedding attempt {attempt+1} failed: {e}")
+                if attempt < 1:
+                    time.sleep(1.0)
+        return None
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         results = []

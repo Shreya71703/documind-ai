@@ -162,6 +162,17 @@ async def generate_grounded_answer(
     delimited_context = (
         f"<document_context>\n{retrieval_response.context}\n</document_context>"
     )
+
+    # STEP 7 VERIFICATION LOGS
+    logger.info(
+        f"\n==================== [RAG PROMPT CONTEXT VERIFICATION] ====================\n"
+        f"User Question       : {question}\n"
+        f"Retrieved Chunks    : {retrieval_response.retrieved_count}\n"
+        f"Included Chunks     : {retrieval_response.included_count}\n"
+        f"Context Length      : {len(retrieval_response.context)} chars\n"
+        f"PROMPT CONTEXT SENT TO LLM:\n{delimited_context[:500]}...\n"
+        f"=========================================================================="
+    )
     
     messages = [
         SystemMessage(content=SYSTEM_PROMPT),

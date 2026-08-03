@@ -72,6 +72,8 @@ def ingest_document_chunks(
             f"Count mismatch: received {len(chunks)} chunks and {len(embeddings)} embeddings."
         )
 
+    emb_dim = len(embeddings[0]) if embeddings else 0
+
     for idx, chunk in enumerate(chunks):
         vector_id = generate_vector_id(document_id, idx)
         meta = {
@@ -89,7 +91,20 @@ def ingest_document_chunks(
             "embedding": embeddings[idx],
             "metadata": meta
         }
-    logger.info(f"Successfully indexed {len(chunks)} chunks for document {document_id}")
+
+    # STEP 2 VERIFICATION LOGS
+    logger.info(
+        f"\n==================== [RAG INDEXING VERIFICATION] ====================\n"
+        f"Document ID           : {document_id}\n"
+        f"User ID               : {user_id}\n"
+        f"Uploaded Filename     : {chunks[0].metadata.get('source_filename', 'N/A') if chunks else 'N/A'}\n"
+        f"Extracted Text Length : {sum(len(c.content) for c in chunks)} chars\n"
+        f"Number of Chunks      : {len(chunks)}\n"
+        f"Embedding Dimension   : {emb_dim}\n"
+        f"Vector Count Inserted : {len(chunks)}\n"
+        f"Collection Name       : in_memory_store (Total Store Size: {len(_inmemory_store)})\n"
+        f"===================================================================="
+    )
 
 def delete_document_vectors(user_id: uuid.UUID, document_id: uuid.UUID) -> None:
     to_delete = [
@@ -112,21 +127,45 @@ def query_similarity(
     top_k: int = 4
 ) -> List[Dict[str, Any]]:
     doc_str_ids = [str(d) for d in document_ids] if document_ids else None
+    user_str_id = str(user_id)
     matches = []
+    
     for item in _inmemory_store.values():
-        if item["user_id"] != str(user_id):
+        if item["user_id"] != user_str_id:
             continue
         if doc_str_ids and item["document_id"] not in doc_str_ids:
             continue
+        
         sim = _cosine_similarity(query_embedding, item["embedding"])
         matches.append({
             "id": item["id"],
             "content": item["content"],
             "metadata": item["metadata"],
-            "distance": 1.0 - sim
+            "distance": 1.0 - sim,
+            "similarity": sim
         })
+
     matches.sort(key=lambda x: x["distance"])
-    return matches[:top_k]
+    top_matches = matches[:top_k]
+
+    # STEP 3 VERIFICATION LOGS
+    logger.info(
+        f"\n==================== [RAG RETRIEVAL VERIFICATION] ====================\n"
+        f"User ID               : {user_id}\n"
+        f"Query Embedding Dim   : {len(query_embedding)}\n"
+        f"Document Filter IDs   : {doc_str_ids}\n"
+        f"Total In-Memory Size  : {len(_inmemory_store)} vectors\n"
+        f"Matches Found         : {len(matches)}\n"
+        f"Top K Returned        : {len(top_matches)}\n"
+    )
+    for idx, match in enumerate(top_matches):
+        logger.info(
+            f"  Match #{idx+1}: Score={match['similarity']:.4f} | Dist={match['distance']:.4f} | "
+            f"DocID={match['metadata'].get('document_id')} | Content Snippet: {match['content'][:80]}..."
+        )
+    logger.info("====================================================================")
+
+    return top_matches
 
 
 

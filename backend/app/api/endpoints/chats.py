@@ -259,12 +259,17 @@ async def ask_question_endpoint(
     # 2. Verify associated documents remain available and indexed
     document_ids = []
     for doc in session.documents:
-        if doc.index_status != "indexed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Associated document '{doc.original_filename}' is not fully indexed."
-            )
-        document_ids.append(doc.id)
+        if doc.index_status == "indexed":
+            document_ids.append(doc.id)
+
+    # Fallback: if no documents were explicitly attached to this session, search ALL indexed documents belonging to user
+    if not document_ids:
+        stmt_all = select(Document.id).where(
+            Document.user_id == current_user.id,
+            Document.index_status == "indexed"
+        )
+        res_all = await db.execute(stmt_all)
+        document_ids = [row[0] for row in res_all.all()]
 
     # 3. Create user message and flush to active transaction
     user_msg = ChatMessage(

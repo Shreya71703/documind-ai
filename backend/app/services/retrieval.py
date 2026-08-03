@@ -36,6 +36,52 @@ class InvalidRetrievalQueryError(RetrievalError):
 # Semantic Retrieval Service Function
 # -------------------------------------------------------------
 
+async def auto_rehydrate_user_documents(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    document_ids: Optional[List[uuid.UUID]] = None
+) -> None:
+    """
+    Ensures that vector store in memory contains chunks for all indexed documents belonging to user_id.
+    If server restarted and _inmemory_store was wiped, this transparently re-extracts and re-embeds
+    documents directly from storage.
+    """
+    from app.services.vector_store import count_document_vectors, ingest_document_chunks
+    from app.services.document_processor import process_document
+    from app.services.embeddings import embed_chunks
+
+    stmt = select(Document).where(
+        Document.user_id == user_id,
+        Document.index_status == "indexed"
+    )
+    if document_ids:
+        stmt = stmt.where(Document.id.in_(document_ids))
+        
+    res = await db.execute(stmt)
+    docs = res.scalars().all()
+    
+    for doc in docs:
+        if count_document_vectors(user_id, doc.id) == 0:
+            logger.info(f"[Auto-Rehydrate] Re-indexing missing vectors in memory for document: '{doc.original_filename}' (ID: {doc.id})")
+            try:
+                processing_result = process_document(
+                    document_id=doc.id,
+                    file_path=doc.storage_path,
+                    original_filename=doc.original_filename
+                )
+                if processing_result.chunks:
+                    texts = [c.content for c in processing_result.chunks]
+                    embeddings = embed_chunks(texts)
+                    ingest_document_chunks(
+                        user_id=user_id,
+                        document_id=doc.id,
+                        chunks=processing_result.chunks,
+                        embeddings=embeddings
+                    )
+                    logger.info(f"[Auto-Rehydrate] Successfully re-hydrated {len(processing_result.chunks)} chunks for '{doc.original_filename}'")
+            except Exception as e:
+                logger.error(f"[Auto-Rehydrate] Failed to re-hydrate doc {doc.id}: {e}")
+
 async def retrieve_context(
     db: AsyncSession,
     query: str,
@@ -46,10 +92,11 @@ async def retrieve_context(
     """
     Performs secure semantic retrieval.
     1. Validates selected documents ownership and indexing state.
-    2. Embeds the query.
-    3. Queries ChromaDB for top_k matches with user isolation.
-    4. Normalizes, deduplicates, and validates results.
-    5. Assembles context bounded by RAG_MAX_CONTEXT_CHARS.
+    2. Auto-rehydrates vector store if memory was wiped (e.g. after server restart).
+    3. Embeds the query.
+    4. Queries vector store for top_k matches with user isolation.
+    5. Normalizes, deduplicates, and validates results.
+    6. Assembles context bounded by RAG_MAX_CONTEXT_CHARS.
     """
     # 1. Validate query
     if not query or not query.strip():
@@ -65,7 +112,6 @@ async def retrieve_context(
             res = await db.execute(stmt)
             doc = res.scalars().first()
             if not doc:
-                # Return non-leaking 404-style error
                 raise DocumentNotIndexedError("Document not found.", status_code=404)
             if doc.index_status != "indexed":
                 raise DocumentNotIndexedError(
@@ -73,7 +119,10 @@ async def retrieve_context(
                     status_code=400
                 )
 
-    # 3. Generate query embedding (lazily validates config and handles provider exceptions internally)
+    # 2b. AUTO-REHYDRATE: If vectors were lost (e.g. server restart), re-index on the fly!
+    await auto_rehydrate_user_documents(db, user_id, document_ids)
+
+    # 3. Generate query embedding
     import time
     from app.core.logging_config import log_structured
     
@@ -85,6 +134,7 @@ async def retrieve_context(
     except Exception as e:
         logger.error(f"Failed to generate query embedding: {e}")
         raise RetrievalError(f"Embedding generation failed: {str(e)}", status_code=500)
+
     dur_emb = (time.perf_counter() - t_start) * 1000.0
     log_structured(
         logging.INFO,
@@ -95,7 +145,7 @@ async def retrieve_context(
         user_id=user_id
     )
 
-    # 4. Query vector store
+    # 4. Query vector store with retry logic (STEP 9)
     t_start = time.perf_counter()
     search_limit = top_k if top_k is not None else settings.RAG_TOP_K
     try:
@@ -105,8 +155,19 @@ async def retrieve_context(
             document_ids=document_ids,
             top_k=search_limit
         )
+        
+        # STEP 9: RETRY RETRIEVAL if zero matches found
+        if not raw_results and document_ids:
+            logger.warning(f"[RAG Retry] 0 matches with strict document_ids filter {document_ids}. Retrying without document filter...")
+            raw_results = query_similarity(
+                query_embedding=query_embedding,
+                user_id=user_id,
+                document_ids=None,  # search all user's documents
+                top_k=max(search_limit, 10)
+            )
+
     except Exception as e:
-        logger.error(f"ChromaDB search failed: {e}")
+        logger.error(f"Vector search failed: {e}")
         raise RetrievalError(f"Vector search failed: {str(e)}", status_code=500)
     dur_retrieval = (time.perf_counter() - t_start) * 1000.0
     log_structured(
