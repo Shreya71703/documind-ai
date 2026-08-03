@@ -34,16 +34,28 @@ class _GeminiEmbeddingsClient:
     def _generate_fallback_vector(self, text: str, dim: int = 768) -> List[float]:
         import hashlib
         import math
-        words = text.lower().split()
+        import re
+
+        clean_text = text.lower()
+        words = re.findall(r'\b\w+\b', clean_text)
         if not words:
             return [1.0 / math.sqrt(dim)] * dim
-        
+
+        # Extract character n-grams (3-grams & 4-grams) + word tokens for rich feature overlap
+        tokens = set(words)
+        for w in words:
+            if len(w) >= 3:
+                for i in range(len(w) - 2):
+                    tokens.add(w[i:i+3])
+            if len(w) >= 4:
+                for i in range(len(w) - 3):
+                    tokens.add(w[i:i+4])
+
         vec = [0.0] * dim
-        for word in words:
-            h_val = int(hashlib.md5(word.encode('utf-8')).hexdigest(), 16)
+        for tok in tokens:
+            h_val = int(hashlib.md5(tok.encode('utf-8')).hexdigest(), 16)
             idx = h_val % dim
-            val = ((h_val >> 8) % 1000) / 500.0 - 1.0
-            vec[idx] += val
+            vec[idx] += 1.0
 
         norm = math.sqrt(sum(x * x for x in vec))
         if norm > 1e-9:
