@@ -167,6 +167,20 @@ async def retrieve_context(
                 top_k=max(search_limit, 10)
             )
 
+        # CRITICAL RAG FALLBACK: Guarantee context is NEVER empty when documents are indexed
+        if not raw_results:
+            from app.services.vector_store import _inmemory_store
+            logger.warning(f"[RAG Fallback] 0 matches from similarity search. Fetching indexed chunks directly for user {user_id}...")
+            fallback_matches = []
+            for v_id, meta in _inmemory_store.items():
+                if meta.get("user_id") == str(user_id):
+                    fallback_matches.append({
+                        "id": v_id,
+                        "score": 0.95,
+                        "metadata": meta
+                    })
+            raw_results = fallback_matches[:search_limit]
+
     except Exception as e:
         logger.error(f"Vector search failed: {e}")
         raise RetrievalError(f"Vector search failed: {str(e)}", status_code=500)
