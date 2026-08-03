@@ -18,6 +18,8 @@ services:
         value: gemini
       - key: GEMINI_API_KEY
         sync: false
+      - key: AUTO_DEPLOY_TRIGGER
+        value: "v_deploy_force_sync_1"
 
   # React Frontend (Static Site)
   - type: web
@@ -25,7 +27,7 @@ services:
     runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    staticPublishPath: dist
     routes:
       - type: rewrite
         source: /*
