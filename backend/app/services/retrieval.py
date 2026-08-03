@@ -67,7 +67,8 @@ async def auto_rehydrate_user_documents(
                 processing_result = process_document(
                     document_id=doc.id,
                     file_path=doc.storage_path,
-                    original_filename=doc.original_filename
+                    original_filename=doc.original_filename,
+                    fallback_text=doc.extracted_text
                 )
                 if processing_result.chunks:
                     texts = [c.content for c in processing_result.chunks]

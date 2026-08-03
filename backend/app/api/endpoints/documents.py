@@ -280,9 +280,10 @@ async def process_document_endpoint(
             detail="Internal server error during document processing."
         )
 
-    # 4. Successful processing: update chunk count and transition status to READY
+    # 4. Successful processing: update chunk count, save extracted_text persistently to DB, and transition status to READY
     document.status = DocumentStatus.READY
     document.chunk_count = processing_result.chunk_count
+    document.extracted_text = "\n\n".join([c.content for c in processing_result.chunks])
     await db.commit()
     await db.refresh(document)
 

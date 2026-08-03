@@ -6,8 +6,10 @@ async def check_db():
     print("Checking database connectivity...", flush=True)
     for attempt in range(1, 31):
         try:
-            async with engine.connect() as conn:
-                print(f"Database connection successful on attempt {attempt}.", flush=True)
+            async with engine.begin() as conn:
+                from sqlalchemy import text
+                await conn.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS extracted_text TEXT;"))
+                print(f"Database connection and schema migration successful on attempt {attempt}.", flush=True)
                 return True
         except Exception as e:
             print(f"Waiting for database (attempt {attempt}/30): {e}", flush=True)
