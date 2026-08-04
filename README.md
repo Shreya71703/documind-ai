@@ -111,7 +111,7 @@ docker compose exec backend alembic upgrade head
 </p>
 
 <p align="center">
-  <img src="docs/images/chat.png" width="800" alt="DocuMind AI Chat Interface">
+  <img src="docs/images/modal.png" width="800" alt="DocuMind AI Chat Interface">
 </p>
 
 ## 🔮 Future Improvements
