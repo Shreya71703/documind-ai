@@ -106,7 +106,13 @@ docker compose exec backend alembic upgrade head
 
 ## 📸 Screenshots
 
-*(Add screenshots here showing the Home Page, Document Upload, and Chat Interface)*
+<p align="center">
+  <img src="docs/images/homepage.png" width="800" alt="DocuMind AI Homepage">
+</p>
+
+<p align="center">
+  <img src="docs/images/chat.png" width="800" alt="DocuMind AI Chat Interface">
+</p>
 
 ## 🔮 Future Improvements
 
